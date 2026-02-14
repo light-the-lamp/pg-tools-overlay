@@ -248,7 +248,7 @@ function OverlayView(): React.JSX.Element {
           Mode: <strong>{isLocked ? 'Locked (click-through)' : 'Unlocked (interactive)'}</strong>
         </p>
         <p className="status-line file-path">
-          {chatState.logPath || 'Waiting for today log file...'}
+          'If you need help with this app, talk to Lamplighter'
         </p>
       </section>
 
