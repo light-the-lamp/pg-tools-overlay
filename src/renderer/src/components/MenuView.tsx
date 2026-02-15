@@ -8,7 +8,7 @@ export default function MenuView(): React.JSX.Element {
   };
 
   return (
-    <main className="menu-shell no-drag">
+    <main className="overlay-shell menu-shell no-drag">
       <p className="menu-title">Menu</p>
       <div className="menu-actions">
         <button className="menu-btn" onClick={openChatWindow} type="button">

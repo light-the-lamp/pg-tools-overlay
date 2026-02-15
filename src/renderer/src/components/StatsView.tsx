@@ -6,38 +6,41 @@ export default function StatsView(): React.JSX.Element {
   const [isLocked, setIsLocked] = useState(false);
   const [fontSettings, setFontSettings] = useState<FontSettings>({ size: 12, color: '#eef3ff' });
 
-  const startResize = useCallback((direction: 'right' | 'bottom' | 'corner', startEvent: React.MouseEvent) => {
-    startEvent.preventDefault();
-    const startX = startEvent.screenX;
-    const startY = startEvent.screenY;
-    const startWidth = window.outerWidth;
-    const startHeight = window.outerHeight;
+  const startResize = useCallback(
+    (direction: 'right' | 'bottom' | 'corner', startEvent: React.MouseEvent) => {
+      startEvent.preventDefault();
+      const startX = startEvent.screenX;
+      const startY = startEvent.screenY;
+      const startWidth = window.outerWidth;
+      const startHeight = window.outerHeight;
 
-    const onMouseMove = (event: MouseEvent): void => {
-      const dx = event.screenX - startX;
-      const dy = event.screenY - startY;
+      const onMouseMove = (event: MouseEvent): void => {
+        const dx = event.screenX - startX;
+        const dy = event.screenY - startY;
 
-      const nextBounds: { width?: number; height?: number } = {};
+        const nextBounds: { width?: number; height?: number } = {};
 
-      if (direction === 'right' || direction === 'corner') {
-        nextBounds.width = startWidth + dx;
-      }
+        if (direction === 'right' || direction === 'corner') {
+          nextBounds.width = startWidth + dx;
+        }
 
-      if (direction === 'bottom' || direction === 'corner') {
-        nextBounds.height = startHeight + dy;
-      }
+        if (direction === 'bottom' || direction === 'corner') {
+          nextBounds.height = startHeight + dy;
+        }
 
-      void window.api.resizeWindow(nextBounds);
-    };
+        void window.api.resizeWindow(nextBounds);
+      };
 
-    const stopResize = (): void => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', stopResize);
-    };
+      const stopResize = (): void => {
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', stopResize);
+      };
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', stopResize);
-  }, []);
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', stopResize);
+    },
+    []
+  );
 
   useEffect(() => {
     void window.api.getStatsState().then(setStatsState);
@@ -97,7 +100,7 @@ export default function StatsView(): React.JSX.Element {
   };
 
   return (
-    <main className="stats-shell">
+    <main className="overlay-shell">
       <header className="drag-bar">
         <p className="title">PG Tools Stats</p>
         <div className="window-actions no-drag">
@@ -169,18 +172,14 @@ export default function StatsView(): React.JSX.Element {
         <p className="stats-header">Stats</p>
         <div className="stats-log">
           <p className="stats-title">XP Gains</p>
-          {statsState.xpGains.length === 0 && (
-            <p className="stats-empty">No XP gains yet.</p>
-          )}
+          {statsState.xpGains.length === 0 && <p className="stats-empty">No XP gains yet.</p>}
           {statsState.xpGains.map((entry) => (
             <p className="stats-line" key={`xp-${entry.skill}`}>
               {entry.skill} +{entry.value} XP
             </p>
           ))}
           <p className="stats-title">Level Ups</p>
-          {statsState.levelUps.length === 0 && (
-            <p className="stats-empty">No level ups yet.</p>
-          )}
+          {statsState.levelUps.length === 0 && <p className="stats-empty">No level ups yet.</p>}
           {statsState.levelUps.map((entry) => (
             <p className="stats-line" key={`lvl-${entry.skill}`}>
               +{entry.value} {entry.skill}

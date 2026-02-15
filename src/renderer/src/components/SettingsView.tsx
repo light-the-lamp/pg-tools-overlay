@@ -49,7 +49,7 @@ export default function SettingsView(): React.JSX.Element {
   };
 
   return (
-    <main className="settings-shell">
+    <main className="overlay-shell settings-shell">
       <h1 className="settings-title">Settings</h1>
       <label className="slider-label" htmlFor="opacity-slider">
         Overlay Opacity: {opacity}%
