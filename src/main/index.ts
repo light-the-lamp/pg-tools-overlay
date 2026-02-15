@@ -1,6 +1,6 @@
-import { app, shell, BrowserWindow, ipcMain, globalShortcut } from 'electron';
+import { app, shell, BrowserWindow, ipcMain, globalShortcut, screen } from 'electron';
 import { existsSync } from 'fs';
-import { open, stat } from 'fs/promises';
+import { open, stat, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import icon from '../../resources/icon.png?asset';
@@ -17,11 +17,45 @@ interface ChatState {
   lines: ChatLine[];
 }
 
-let overlayWindow: BrowserWindow | null = null;
+interface FontSettings {
+  size: number;
+  color: string;
+}
+
+interface AppSettings {
+  overlayOpacity: number;
+  fontSettings: FontSettings;
+}
+
+interface StatsEntry {
+  skill: string;
+  value: number;
+}
+
+interface StatsState {
+  xpGains: StatsEntry[];
+  levelUps: StatsEntry[];
+}
+const overlayWindows = new Set<BrowserWindow>();
+const menuWindows = new Map<BrowserWindow, BrowserWindow>();
 let settingsWindow: BrowserWindow | null = null;
+let statsWindow: BrowserWindow | null = null;
 let overlayLocked = false;
 let overlayOpacity = 1;
+let overlayFontSettings: FontSettings = { size: 12, color: '#eef3ff' };
+let settingsPath = '';
+let settingsWriteInFlight: Promise<void> | null = null;
+const xpBySkill = new Map<string, number>();
+const levelUpsBySkill = new Map<string, number>();
 const topBarInteractiveByWindow = new WeakMap<BrowserWindow, boolean>();
+const overlayMinSize = { width: 520, height: 360 };
+const menuWindowSize = { width: 240, height: 320 };
+const menuWindowGap = 8;
+const overlayTopBarHeight = 52;
+const overlayResizeEdge = 14;
+const mouseTrackingIntervalMs = 80;
+let mouseTrackingInterval: NodeJS.Timeout | null = null;
+const ignoreMouseByWindow = new WeakMap<BrowserWindow, boolean>();
 
 const chatLines: ChatLine[] = [];
 const chatChannels = new Set<string>();
@@ -49,13 +83,31 @@ function getTodayLogCandidates(): string[] {
   return [join(baseDir, `${baseName}.log`), join(baseDir, baseName)];
 }
 
+function stripLeadingDate(line: string): string {
+  const trimmed = line.trimStart();
+  const patterns = [
+    /^\d{4}[-/]\d{2}[-/]\d{2}\s+(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?)\s+/i,
+    /^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\s+(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?)\s+/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = trimmed.match(pattern);
+    if (match) {
+      return trimmed.replace(pattern, `${match[1]} `);
+    }
+  }
+
+  return trimmed;
+}
+
 function parseChatLine(line: string): ChatLine {
-  const channelMatch = line.match(/\[([^\]]+)\]/);
+  const normalized = stripLeadingDate(line);
+  const channelMatch = normalized.match(/\[([^\]]+)\]/);
   const channel = channelMatch ? channelMatch[1].trim() : null;
   return {
     id: ++chatLineId,
     channel,
-    text: line
+    text: normalized
   };
 }
 
@@ -69,7 +121,97 @@ function getChatState(): ChatState {
 
 function broadcastChatState(): void {
   const state = getChatState();
-  overlayWindow?.webContents.send('chat:state-changed', state);
+  for (const window of overlayWindows) {
+    window.webContents.send('chat:state-changed', state);
+  }
+}
+
+function broadcastFontSettings(): void {
+  for (const window of overlayWindows) {
+    window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+  }
+  for (const menuWindow of menuWindows.values()) {
+    if (!menuWindow.isDestroyed()) {
+      menuWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    }
+  }
+  if (statsWindow && !statsWindow.isDestroyed()) {
+    statsWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+  }
+  settingsWindow?.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+}
+
+function getStatsState(): StatsState {
+  const xpGains = Array.from(xpBySkill.entries())
+    .map(([skill, value]) => ({ skill, value }))
+    .sort((a, b) => b.value - a.value || a.skill.localeCompare(b.skill));
+  const levelUps = Array.from(levelUpsBySkill.entries())
+    .map(([skill, value]) => ({ skill, value }))
+    .sort((a, b) => b.value - a.value || a.skill.localeCompare(b.skill));
+  return { xpGains, levelUps };
+}
+
+function broadcastStats(): void {
+  const state = getStatsState();
+  for (const window of overlayWindows) {
+    window.webContents.send('stats:state-changed', state);
+  }
+  for (const menuWindow of menuWindows.values()) {
+    if (!menuWindow.isDestroyed()) {
+      menuWindow.webContents.send('stats:state-changed', state);
+    }
+  }
+  statsWindow?.webContents.send('stats:state-changed', state);
+  settingsWindow?.webContents.send('stats:state-changed', state);
+}
+
+function getSettingsPayload(): AppSettings {
+  return {
+    overlayOpacity,
+    fontSettings: overlayFontSettings
+  };
+}
+
+async function loadAppSettings(): Promise<void> {
+  settingsPath = join(app.getPath('userData'), 'settings.json');
+  try {
+    const raw = await readFile(settingsPath, 'utf8');
+    const parsed = JSON.parse(raw) as Partial<AppSettings>;
+    const nextOpacity =
+      typeof parsed.overlayOpacity === 'number'
+        ? Math.max(0.2, Math.min(1, parsed.overlayOpacity))
+        : overlayOpacity;
+    const nextFont = parsed.fontSettings;
+    const nextFontSize =
+      typeof nextFont?.size === 'number'
+        ? Math.max(10, Math.min(22, nextFont.size))
+        : overlayFontSettings.size;
+    const nextFontColor =
+      typeof nextFont?.color === 'string' && nextFont.color.trim()
+        ? nextFont.color.trim()
+        : overlayFontSettings.color;
+
+    overlayOpacity = nextOpacity;
+    overlayFontSettings = { size: nextFontSize, color: nextFontColor };
+  } catch {
+    // No settings yet or invalid JSON; keep defaults
+  }
+}
+
+async function persistAppSettings(): Promise<void> {
+  if (!settingsPath) return;
+  const payload = JSON.stringify(getSettingsPayload(), null, 2);
+  const writePromise = writeFile(settingsPath, payload, 'utf8');
+  settingsWriteInFlight = writePromise;
+  try {
+    await writePromise;
+  } catch {
+    // Ignore write failures
+  } finally {
+    if (settingsWriteInFlight === writePromise) {
+      settingsWriteInFlight = null;
+    }
+  }
 }
 
 function clearChatState(): void {
@@ -77,16 +219,46 @@ function clearChatState(): void {
   chatChannels.clear();
   chatPartialLine = '';
   chatLineId = 0;
+  xpBySkill.clear();
+  levelUpsBySkill.clear();
+}
+
+function trackStatsForLine(line: string): boolean {
+  const xpMatch = line.match(/[Status] You earned (\d+)\s*XP\b/i);
+  const skillMatch = line.match(/ in ([^.!]+?)(?:[.!]|$)/i);
+  const levelUpMatch = line.match(/reached level \d+\s+in ([^.!]+?)(?:[.!]|$)/i);
+  let changed = false;
+
+  if (xpMatch && skillMatch) {
+    const gained = Number(xpMatch[1]);
+    const skill = skillMatch[1].trim();
+    if (Number.isFinite(gained) && skill) {
+      xpBySkill.set(skill, (xpBySkill.get(skill) ?? 0) + gained);
+      changed = true;
+    }
+  }
+
+  if (xpMatch && levelUpMatch) {
+    const skill = levelUpMatch[1].trim();
+    if (skill) {
+      levelUpsBySkill.set(skill, (levelUpsBySkill.get(skill) ?? 0) + 1);
+      changed = true;
+    }
+  }
+
+  return changed;
 }
 
 function ingestChatLines(lines: string[]): boolean {
   let changed = false;
+  let statsChanged = false;
 
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
 
     const parsed = parseChatLine(line);
+    statsChanged = trackStatsForLine(parsed.text) || statsChanged;
     if (parsed.channel) {
       chatChannels.add(parsed.channel);
     }
@@ -98,7 +270,11 @@ function ingestChatLines(lines: string[]): boolean {
     chatLines.splice(0, chatLines.length - maxChatLines);
   }
 
-  return changed;
+  if (statsChanged) {
+    broadcastStats();
+  }
+
+  return changed || statsChanged;
 }
 
 function consumeChunk(text: string, flushTail: boolean): boolean {
@@ -195,24 +371,158 @@ function loadRenderer(window: BrowserWindow, hash?: string): void {
   window.loadFile(join(__dirname, '../renderer/index.html'), hash ? { hash } : undefined);
 }
 
-function syncMousePassthrough(window: BrowserWindow): void {
-  const topBarInteractive = topBarInteractiveByWindow.get(window) ?? false;
-  const shouldIgnoreMouse = overlayLocked && !topBarInteractive;
+function setIgnoreMouse(window: BrowserWindow, shouldIgnoreMouse: boolean): void {
+  const current = ignoreMouseByWindow.get(window);
+  if (current === shouldIgnoreMouse) return;
   window.setIgnoreMouseEvents(shouldIgnoreMouse, { forward: true });
+  ignoreMouseByWindow.set(window, shouldIgnoreMouse);
 }
 
-function applyOverlayLock(window: BrowserWindow, locked: boolean): void {
+function shouldAllowMouse(window: BrowserWindow): boolean {
+  const { x, y } = screen.getCursorScreenPoint();
+  const bounds = window.getBounds();
+  if (x < bounds.x || x > bounds.x + bounds.width) return false;
+  if (y < bounds.y || y > bounds.y + bounds.height) return false;
+
+  const withinTopBar = y <= bounds.y + overlayTopBarHeight;
+  const withinResizeEdge =
+    x >= bounds.x + bounds.width - overlayResizeEdge ||
+    y >= bounds.y + bounds.height - overlayResizeEdge;
+
+  return withinTopBar || withinResizeEdge;
+}
+
+function syncMousePassthrough(window: BrowserWindow): void {
+  if (!overlayLocked) {
+    setIgnoreMouse(window, false);
+    return;
+  }
+
+  const allowMouse = shouldAllowMouse(window);
+  setIgnoreMouse(window, !allowMouse);
+}
+
+function getOverlayLikeWindows(): BrowserWindow[] {
+  const windows = Array.from(overlayWindows);
+  if (statsWindow && !statsWindow.isDestroyed()) {
+    windows.push(statsWindow);
+  }
+  return windows;
+}
+
+function applyOverlayLock(locked: boolean): void {
   overlayLocked = locked;
-  syncMousePassthrough(window);
-  window.webContents.send('overlay:lock-state-changed', overlayLocked);
+  for (const overlayWindow of getOverlayLikeWindows()) {
+    syncMousePassthrough(overlayWindow);
+    overlayWindow.webContents.send('overlay:lock-state-changed', overlayLocked);
+  }
+
+  if (overlayLocked) {
+    if (!mouseTrackingInterval) {
+      mouseTrackingInterval = setInterval(() => {
+        for (const overlayWindow of getOverlayLikeWindows()) {
+          syncMousePassthrough(overlayWindow);
+        }
+      }, mouseTrackingIntervalMs);
+    }
+  } else if (mouseTrackingInterval) {
+    clearInterval(mouseTrackingInterval);
+    mouseTrackingInterval = null;
+  }
+}
+
+function positionMenuWindow(overlay: BrowserWindow, menu: BrowserWindow): void {
+  if (overlay.isDestroyed() || menu.isDestroyed()) return;
+  const overlayBounds = overlay.getBounds();
+  const nextX = overlayBounds.x + overlayBounds.width + menuWindowGap;
+  const nextY = overlayBounds.y;
+  menu.setBounds({
+    x: nextX,
+    y: nextY,
+    width: menuWindowSize.width,
+    height: menuWindowSize.height
+  });
+}
+
+function createMenuWindow(parent: BrowserWindow): BrowserWindow {
+  const window = new BrowserWindow({
+    width: menuWindowSize.width,
+    height: menuWindowSize.height,
+    resizable: false,
+    show: false,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    autoHideMenuBar: true,
+    skipTaskbar: true,
+    parent,
+    ...(process.platform === 'linux' ? { icon } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  });
+
+  window.setTitle('pg-tools Menu');
+  window.setAlwaysOnTop(true, 'screen-saver');
+  window.setOpacity(overlayOpacity);
+
+  window.on('ready-to-show', () => {
+    positionMenuWindow(parent, window);
+    window.show();
+  });
+
+  window.webContents.setWindowOpenHandler((details) => {
+    shell.openExternal(details.url);
+    return { action: 'deny' };
+  });
+  window.webContents.on('did-finish-load', () => {
+    window.webContents.send('overlay:opacity-changed', overlayOpacity);
+    window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    window.webContents.send('stats:state-changed', getStatsState());
+  });
+
+  window.on('closed', () => {
+    const existing = menuWindows.get(parent);
+    if (existing === window) {
+      menuWindows.delete(parent);
+    }
+  });
+
+  loadRenderer(window, 'menu');
+  menuWindows.set(parent, window);
+  return window;
+}
+
+function toggleMenuWindow(parent: BrowserWindow): void {
+  const existing = menuWindows.get(parent);
+  if (!existing || existing.isDestroyed()) {
+    const window = createMenuWindow(parent);
+    positionMenuWindow(parent, window);
+    return;
+  }
+
+  if (existing.isVisible()) {
+    existing.hide();
+    return;
+  }
+
+  positionMenuWindow(parent, existing);
+  existing.show();
+}
+
+function applyOverlayTraits(window: BrowserWindow): void {
+  window.setAlwaysOnTop(true, 'screen-saver');
+  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  window.setFullScreenable(false);
 }
 
 function createOverlayWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 760,
     height: 440,
-    minWidth: 320,
-    minHeight: 180,
+    minWidth: overlayMinSize.width,
+    minHeight: overlayMinSize.height,
     resizable: true,
     thickFrame: true,
     show: false,
@@ -230,11 +540,11 @@ function createOverlayWindow(): BrowserWindow {
   });
   mainWindow.setTitle('pg-tools Overlay');
 
-  mainWindow.setAlwaysOnTop(true, 'screen-saver');
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  applyOverlayTraits(mainWindow);
   mainWindow.setOpacity(overlayOpacity);
 
   mainWindow.on('ready-to-show', () => {
+    applyOverlayTraits(mainWindow);
     mainWindow.show();
   });
 
@@ -248,13 +558,69 @@ function createOverlayWindow(): BrowserWindow {
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow.webContents.send('overlay:lock-state-changed', overlayLocked);
     mainWindow.webContents.send('overlay:opacity-changed', overlayOpacity);
+    mainWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    mainWindow.webContents.send('stats:state-changed', getStatsState());
     mainWindow.webContents.send('chat:state-changed', getChatState());
   });
   mainWindow.on('closed', () => {
-    overlayWindow = null;
+    const menuWindow = menuWindows.get(mainWindow);
+    if (menuWindow && !menuWindow.isDestroyed()) {
+      menuWindow.close();
+    }
+    menuWindows.delete(mainWindow);
+    overlayWindows.delete(mainWindow);
+    if (overlayWindows.size === 0 && !statsWindow && mouseTrackingInterval) {
+      clearInterval(mouseTrackingInterval);
+      mouseTrackingInterval = null;
+    }
+  });
+  mainWindow.on('move', () => {
+    const menuWindow = menuWindows.get(mainWindow);
+    if (menuWindow) {
+      positionMenuWindow(mainWindow, menuWindow);
+    }
+  });
+  mainWindow.on('resize', () => {
+    const menuWindow = menuWindows.get(mainWindow);
+    if (menuWindow) {
+      positionMenuWindow(mainWindow, menuWindow);
+    }
+  });
+  mainWindow.on('focus', () => {
+    applyOverlayTraits(mainWindow);
+  });
+  mainWindow.on('minimize', () => {
+    const menuWindow = menuWindows.get(mainWindow);
+    if (menuWindow) {
+      menuWindow.hide();
+    }
+  });
+  mainWindow.on('restore', () => {
+    applyOverlayTraits(mainWindow);
+    const menuWindow = menuWindows.get(mainWindow);
+    if (menuWindow) {
+      positionMenuWindow(mainWindow, menuWindow);
+      menuWindow.show();
+    }
+  });
+  mainWindow.on('show', () => {
+    applyOverlayTraits(mainWindow);
+    const menuWindow = menuWindows.get(mainWindow);
+    if (menuWindow) {
+      positionMenuWindow(mainWindow, menuWindow);
+      menuWindow.show();
+    }
+  });
+  mainWindow.on('hide', () => {
+    const menuWindow = menuWindows.get(mainWindow);
+    if (menuWindow) {
+      menuWindow.hide();
+    }
   });
   loadRenderer(mainWindow);
 
+  overlayWindows.add(mainWindow);
+  createMenuWindow(mainWindow);
   return mainWindow;
 }
 
@@ -265,9 +631,11 @@ function createSettingsWindow(): BrowserWindow {
   }
 
   const window = new BrowserWindow({
-    width: 360,
-    height: 180,
-    resizable: false,
+    width: 420,
+    height: 320,
+    minWidth: 380,
+    minHeight: 260,
+    resizable: true,
     show: false,
     autoHideMenuBar: true,
     alwaysOnTop: true,
@@ -292,8 +660,69 @@ function createSettingsWindow(): BrowserWindow {
   return window;
 }
 
-app.whenReady().then(() => {
+function createStatsWindow(): BrowserWindow {
+  if (statsWindow && !statsWindow.isDestroyed()) {
+    statsWindow.focus();
+    return statsWindow;
+  }
+
+  const window = new BrowserWindow({
+    width: 420,
+    height: 420,
+    minWidth: 360,
+    minHeight: 280,
+    resizable: true,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: true,
+    autoHideMenuBar: true,
+    alwaysOnTop: true,
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'linux' ? { icon } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  });
+
+  window.setTitle('Stats - pg-tools');
+  applyOverlayTraits(window);
+  syncMousePassthrough(window);
+
+  window.on('ready-to-show', () => {
+    applyOverlayTraits(window);
+    window.show();
+  });
+  window.on('focus', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('restore', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('closed', () => {
+    statsWindow = null;
+    if (overlayWindows.size === 0 && mouseTrackingInterval) {
+      clearInterval(mouseTrackingInterval);
+      mouseTrackingInterval = null;
+    }
+  });
+
+  window.webContents.on('did-finish-load', () => {
+    window.webContents.send('overlay:lock-state-changed', overlayLocked);
+    window.webContents.send('overlay:opacity-changed', overlayOpacity);
+    window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    window.webContents.send('stats:state-changed', getStatsState());
+  });
+
+  loadRenderer(window, 'stats');
+  statsWindow = window;
+  return window;
+}
+
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.pgtools');
+  await loadAppSettings();
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window);
@@ -316,11 +745,13 @@ app.whenReady().then(() => {
       if (!window) return;
 
       const current = window.getBounds();
+      const nextWidth = bounds.width ?? current.width;
+      const nextHeight = bounds.height ?? current.height;
       window.setBounds({
         x: bounds.x ?? current.x,
         y: bounds.y ?? current.y,
-        width: bounds.width ?? current.width,
-        height: bounds.height ?? current.height
+        width: Math.max(overlayMinSize.width, nextWidth),
+        height: Math.max(overlayMinSize.height, nextHeight)
       });
     }
   );
@@ -329,13 +760,29 @@ app.whenReady().then(() => {
     createSettingsWindow();
   });
 
+  ipcMain.handle('window:open-stats', () => {
+    createStatsWindow();
+  });
+
+  ipcMain.handle('window:open-chat', () => {
+    createOverlayWindow();
+  });
+
+  ipcMain.handle('window:toggle-menu', (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) return;
+    toggleMenuWindow(window);
+  });
+
   ipcMain.handle('overlay:get-locked', () => overlayLocked);
 
   ipcMain.handle('overlay:set-locked', (event, locked: boolean) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window) return overlayLocked;
-    topBarInteractiveByWindow.set(window, false);
-    applyOverlayLock(window, Boolean(locked));
+    for (const overlayWindow of overlayWindows) {
+      topBarInteractiveByWindow.set(overlayWindow, false);
+    }
+    applyOverlayLock(Boolean(locked));
     return overlayLocked;
   });
 
@@ -351,15 +798,51 @@ app.whenReady().then(() => {
   ipcMain.handle('overlay:set-opacity', (_event, value: number) => {
     const nextOpacity = Math.max(0.2, Math.min(1, value));
     overlayOpacity = nextOpacity;
-    overlayWindow?.setOpacity(nextOpacity);
-    overlayWindow?.webContents.send('overlay:opacity-changed', nextOpacity);
+    for (const window of overlayWindows) {
+      window.setOpacity(nextOpacity);
+      window.webContents.send('overlay:opacity-changed', nextOpacity);
+    }
+    for (const menuWindow of menuWindows.values()) {
+      if (!menuWindow.isDestroyed()) {
+        menuWindow.setOpacity(nextOpacity);
+        menuWindow.webContents.send('overlay:opacity-changed', nextOpacity);
+      }
+    }
+    if (statsWindow && !statsWindow.isDestroyed()) {
+      statsWindow.setOpacity(nextOpacity);
+      statsWindow.webContents.send('overlay:opacity-changed', nextOpacity);
+    }
     settingsWindow?.webContents.send('overlay:opacity-changed', nextOpacity);
+    void persistAppSettings();
     return overlayOpacity;
   });
 
-  ipcMain.handle('chat:get-state', () => getChatState());
+  ipcMain.handle('overlay:get-font-settings', () => overlayFontSettings);
 
-  overlayWindow = createOverlayWindow();
+  ipcMain.handle('overlay:set-font-settings', (_event, settings: FontSettings) => {
+    const nextSize = Math.max(10, Math.min(22, Number(settings.size) || overlayFontSettings.size));
+    const nextColor =
+      typeof settings.color === 'string' && settings.color.trim()
+        ? settings.color.trim()
+        : overlayFontSettings.color;
+    overlayFontSettings = { size: nextSize, color: nextColor };
+    broadcastFontSettings();
+    for (const menuWindow of menuWindows.values()) {
+      if (!menuWindow.isDestroyed()) {
+        menuWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+      }
+    }
+    if (statsWindow && !statsWindow.isDestroyed()) {
+      statsWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    }
+    void persistAppSettings();
+    return overlayFontSettings;
+  });
+
+  ipcMain.handle('chat:get-state', () => getChatState());
+  ipcMain.handle('stats:get-state', () => getStatsState());
+
+  createOverlayWindow();
   void runLogMonitorTick();
   logPollInterval = setInterval(() => {
     void runLogMonitorTick();
@@ -367,13 +850,13 @@ app.whenReady().then(() => {
 
   const toggleShortcut = process.platform === 'darwin' ? 'Command+Shift+L' : 'Control+Shift+L';
   globalShortcut.register(toggleShortcut, () => {
-    if (!overlayWindow) return;
-    applyOverlayLock(overlayWindow, !overlayLocked);
+    if (overlayWindows.size === 0) return;
+    applyOverlayLock(!overlayLocked);
   });
 
   app.on('activate', function () {
-    if (!overlayWindow || overlayWindow.isDestroyed()) {
-      overlayWindow = createOverlayWindow();
+    if (overlayWindows.size === 0) {
+      createOverlayWindow();
     }
   });
 });
@@ -388,6 +871,10 @@ app.on('will-quit', () => {
   if (logPollInterval) {
     clearInterval(logPollInterval);
     logPollInterval = null;
+  }
+  if (mouseTrackingInterval) {
+    clearInterval(mouseTrackingInterval);
+    mouseTrackingInterval = null;
   }
   globalShortcut.unregisterAll();
 });

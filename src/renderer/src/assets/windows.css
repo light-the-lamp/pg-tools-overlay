@@ -1,0 +1,105 @@
+.overlay-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(150deg, rgba(20, 27, 40, 0.94), rgba(11, 14, 24, 0.92));
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.38);
+  color: #eef3ff;
+  overflow: hidden;
+}
+
+.drag-bar {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.title {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  text-transform: uppercase;
+  opacity: 0.92;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.window-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.window-btn {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #f5f8ff;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.window-btn:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.window-btn.close:hover {
+  background: rgba(214, 68, 68, 0.95);
+}
+
+.window-btn.lock:hover {
+  background: rgba(81, 142, 255, 0.95);
+}
+
+.window-btn.settings:hover {
+  background: rgba(62, 200, 170, 0.95);
+}
+
+.window-btn.menu:hover {
+  background: rgba(95, 185, 255, 0.95);
+}
+
+.window-btn.new-chat:hover {
+  background: rgba(165, 120, 255, 0.95);
+}
+
+.resize-handle {
+  position: absolute;
+  z-index: 10;
+}
+
+.resize-right {
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+}
+
+.resize-bottom {
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 12px;
+  cursor: ns-resize;
+}
+
+.resize-corner {
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}

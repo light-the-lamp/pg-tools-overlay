@@ -1,0 +1,71 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.status-line {
+  font-size: 12px;
+  margin: 0;
+}
+
+.file-path {
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.channel-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.channel-select {
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: rgba(12, 18, 30, 0.85);
+  color: #eef3ff;
+}
+
+.log-list {
+  flex: 0 0 auto;
+  height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(8, 11, 20, 0.5);
+  padding: 6px 8px;
+  margin-bottom: 2px;
+}
+
+.log-line {
+  max-width: 100%;
+  margin: 0 0 4px;
+  font-size: var(--chat-font-size, 12px);
+  line-height: 1.4;
+  color: var(--chat-font-color, rgba(236, 241, 255, 0.95));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.log-empty {
+  margin: 0;
+  font-size: var(--chat-font-size, 12px);
+  color: var(--chat-font-color, rgba(236, 241, 255, 0.95));
+  opacity: 0.72;
+}
