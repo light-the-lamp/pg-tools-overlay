@@ -46,6 +46,9 @@ const api = {
   openStatsWindow: (): Promise<void> => {
     return ipcRenderer.invoke('window:open-stats');
   },
+  openSurveyorWindow: (): Promise<void> => {
+    return ipcRenderer.invoke('window:open-surveyor');
+  },
   openChatWindow: (): Promise<void> => {
     return ipcRenderer.invoke('window:open-chat');
   },

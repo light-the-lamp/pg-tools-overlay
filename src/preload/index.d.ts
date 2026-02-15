@@ -41,6 +41,7 @@ interface OverlayAPI {
   setTopBarInteractive: (interactive: boolean) => Promise<void>
   openSettingsWindow: () => Promise<void>
   openStatsWindow: () => Promise<void>
+  openSurveyorWindow: () => Promise<void>
   openChatWindow: () => Promise<void>
   toggleMenuWindow: () => Promise<void>
   getOverlayOpacity: () => Promise<number>

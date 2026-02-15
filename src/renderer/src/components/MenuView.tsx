@@ -7,6 +7,10 @@ export default function MenuView(): React.JSX.Element {
     void window.api.openChatWindow();
   };
 
+  const openSurveyorWindow = (): void => {
+    void window.api.openSurveyorWindow();
+  };
+
   return (
     <main className="overlay-shell menu-shell no-drag">
       <p className="menu-title">Menu</p>
@@ -16,6 +20,9 @@ export default function MenuView(): React.JSX.Element {
         </button>
         <button className="menu-btn" onClick={openStats} type="button">
           Stats
+        </button>
+        <button className="menu-btn" onClick={openSurveyorWindow} type="button">
+          Surveyor
         </button>
       </div>
       <p className="menu-footer">More tools coming soon.</p>

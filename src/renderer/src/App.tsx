@@ -2,6 +2,7 @@ import ChatOverlay from './components/ChatOverlay';
 import MenuView from './components/MenuView';
 import SettingsView from './components/SettingsView';
 import StatsView from './components/StatsView';
+import SurveyorView from './components/SurveyorView';
 
 function App(): React.JSX.Element {
   if (window.location.hash === '#settings') {
@@ -12,6 +13,9 @@ function App(): React.JSX.Element {
   }
   if (window.location.hash === '#stats') {
     return <StatsView />;
+  }
+  if (window.location.hash === '#surveyor') {
+    return <SurveyorView />;
   }
   return <ChatOverlay />;
 }

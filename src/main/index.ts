@@ -40,6 +40,7 @@ const overlayWindows = new Set<BrowserWindow>();
 const menuWindows = new Map<BrowserWindow, BrowserWindow>();
 let settingsWindow: BrowserWindow | null = null;
 let statsWindow: BrowserWindow | null = null;
+let surveyorWindow: BrowserWindow | null = null;
 let overlayLocked = false;
 let overlayOpacity = 1;
 let overlayFontSettings: FontSettings = { size: 12, color: '#eef3ff' };
@@ -137,6 +138,9 @@ function broadcastFontSettings(): void {
   }
   if (statsWindow && !statsWindow.isDestroyed()) {
     statsWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+  }
+  if (surveyorWindow && !surveyorWindow.isDestroyed()) {
+    surveyorWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
   }
   settingsWindow?.webContents.send('overlay:font-settings-changed', overlayFontSettings);
 }
@@ -407,6 +411,9 @@ function getOverlayLikeWindows(): BrowserWindow[] {
   if (statsWindow && !statsWindow.isDestroyed()) {
     windows.push(statsWindow);
   }
+  if (surveyorWindow && !surveyorWindow.isDestroyed()) {
+    windows.push(surveyorWindow);
+  }
   return windows;
 }
 
@@ -569,7 +576,12 @@ function createOverlayWindow(): BrowserWindow {
     }
     menuWindows.delete(mainWindow);
     overlayWindows.delete(mainWindow);
-    if (overlayWindows.size === 0 && !statsWindow && mouseTrackingInterval) {
+    if (
+      overlayWindows.size === 0 &&
+      !statsWindow &&
+      !surveyorWindow &&
+      mouseTrackingInterval
+    ) {
       clearInterval(mouseTrackingInterval);
       mouseTrackingInterval = null;
     }
@@ -720,6 +732,65 @@ function createStatsWindow(): BrowserWindow {
   return window;
 }
 
+function createSurveyorWindow(): BrowserWindow {
+  if (surveyorWindow && !surveyorWindow.isDestroyed()) {
+    surveyorWindow.focus();
+    return surveyorWindow;
+  }
+
+  const window = new BrowserWindow({
+    width: 420,
+    height: 320,
+    minWidth: 320,
+    minHeight: 220,
+    resizable: true,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: true,
+    autoHideMenuBar: true,
+    alwaysOnTop: true,
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'linux' ? { icon } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  });
+
+  window.setTitle('Surveyor - pg-tools');
+  applyOverlayTraits(window);
+  syncMousePassthrough(window);
+
+  window.on('ready-to-show', () => {
+    applyOverlayTraits(window);
+    window.show();
+  });
+  window.on('focus', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('restore', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('closed', () => {
+    surveyorWindow = null;
+    if (overlayWindows.size === 0 && !statsWindow && mouseTrackingInterval) {
+      clearInterval(mouseTrackingInterval);
+      mouseTrackingInterval = null;
+    }
+  });
+
+  window.webContents.on('did-finish-load', () => {
+    window.webContents.send('overlay:lock-state-changed', overlayLocked);
+    window.webContents.send('overlay:opacity-changed', overlayOpacity);
+    window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+  });
+
+  loadRenderer(window, 'surveyor');
+  surveyorWindow = window;
+  return window;
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.pgtools');
   await loadAppSettings();
@@ -762,6 +833,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('window:open-stats', () => {
     createStatsWindow();
+  });
+
+  ipcMain.handle('window:open-surveyor', () => {
+    createSurveyorWindow();
   });
 
   ipcMain.handle('window:open-chat', () => {
@@ -812,6 +887,10 @@ app.whenReady().then(async () => {
       statsWindow.setOpacity(nextOpacity);
       statsWindow.webContents.send('overlay:opacity-changed', nextOpacity);
     }
+    if (surveyorWindow && !surveyorWindow.isDestroyed()) {
+      surveyorWindow.setOpacity(nextOpacity);
+      surveyorWindow.webContents.send('overlay:opacity-changed', nextOpacity);
+    }
     settingsWindow?.webContents.send('overlay:opacity-changed', nextOpacity);
     void persistAppSettings();
     return overlayOpacity;
@@ -834,6 +913,9 @@ app.whenReady().then(async () => {
     }
     if (statsWindow && !statsWindow.isDestroyed()) {
       statsWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    }
+    if (surveyorWindow && !surveyorWindow.isDestroyed()) {
+      surveyorWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     }
     void persistAppSettings();
     return overlayFontSettings;

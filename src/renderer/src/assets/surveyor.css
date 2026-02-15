@@ -1,0 +1,130 @@
+.surveyor-shell {
+  background: transparent;
+  box-shadow: none;
+  border-color: rgba(255, 131, 95, 0.95);
+}
+
+.surveyor-content {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: transparent;
+}
+
+.pin-menu {
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(16, 22, 34, 0.5);
+}
+
+.pin-type {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eff4ff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pin-type:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.pin-type.active {
+  border-color: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+.pin-type.pin-p.active {
+  background: rgba(236, 83, 83, 0.7);
+}
+
+.pin-type.pin-t.active {
+  background: rgba(71, 164, 255, 0.7);
+}
+
+.pin-reset {
+  margin-top: auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(214, 68, 68, 0.26);
+  color: #f7faff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pin-reset:hover:enabled {
+  background: rgba(214, 68, 68, 0.65);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.pin-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.surveyor-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  cursor: crosshair;
+}
+
+.route-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.route-line {
+  fill: none;
+  stroke: rgba(255, 223, 117, 0.9);
+  stroke-width: 0.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1.4 1;
+}
+
+.placed-pin {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50% 50% 50% 0;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  transform: translate(-50%, -100%) rotate(-45deg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.placed-pin:hover {
+  filter: brightness(1.15);
+}
+
+.placed-pin.nearest {
+  box-shadow: 0 0 0 2px rgba(255, 223, 117, 0.95), 0 0 10px rgba(255, 223, 117, 0.6);
+  filter: brightness(1.25);
+}
+
+.placed-pin.pin-p {
+  background: #ec5353;
+}
+
+.placed-pin.pin-t {
+  background: #47a4ff;
+}
