@@ -14,20 +14,12 @@ export default function MenuView(): React.JSX.Element {
     };
   }, []);
 
-  const openSettings = (): void => {
-    void window.api.openSettingsWindow();
-  };
-
   const openStats = (): void => {
     void window.api.openStatsWindow();
   };
 
   const openChatWindow = (): void => {
     void window.api.openChatWindow();
-  };
-
-  const toggleLock = (): void => {
-    void window.api.setOverlayLocked(!isLocked);
   };
 
   return (
