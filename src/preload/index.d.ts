@@ -4,6 +4,7 @@ interface ChatLine {
   id: number
   channel: string | null
   text: string
+  matchCount: number
 }
 
 interface ChatState {
@@ -25,6 +26,11 @@ interface StatsEntry {
 interface StatsState {
   xpGains: StatsEntry[]
   levelUps: StatsEntry[]
+}
+
+interface ChatNotificationState {
+  keywords: string[]
+  matchCount: number
 }
 
 interface OverlayAPI {
@@ -50,11 +56,15 @@ interface OverlayAPI {
   setFontSettings: (settings: FontSettings) => Promise<FontSettings>
   getStatsState: () => Promise<StatsState>
   getChatState: () => Promise<ChatState>
+  getChatNotificationState: () => Promise<ChatNotificationState>
+  setChatNotificationKeywords: (keywords: string[]) => Promise<ChatNotificationState>
+  markChatNotificationsSeen: () => Promise<ChatNotificationState>
   onOverlayLockStateChanged: (listener: (locked: boolean) => void) => () => void
   onOverlayOpacityChanged: (listener: (opacity: number) => void) => () => void
   onFontSettingsChanged: (listener: (settings: FontSettings) => void) => () => void
   onStatsStateChanged: (listener: (state: StatsState) => void) => () => void
   onChatStateChanged: (listener: (state: ChatState) => void) => () => void
+  onChatNotificationStateChanged: (listener: (state: ChatNotificationState) => void) => () => void
 }
 
 declare global {

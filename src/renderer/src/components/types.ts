@@ -2,6 +2,7 @@ export interface ChatLine {
   id: number;
   channel: string | null;
   text: string;
+  matchCount: number;
 }
 
 export interface ChatState {
@@ -23,4 +24,9 @@ export interface StatsEntry {
 export interface StatsState {
   xpGains: StatsEntry[];
   levelUps: StatsEntry[];
+}
+
+export interface ChatNotificationState {
+  keywords: string[];
+  matchCount: number;
 }

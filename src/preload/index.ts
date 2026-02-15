@@ -5,6 +5,7 @@ interface ChatLine {
   id: number;
   channel: string | null;
   text: string;
+  matchCount: number;
 }
 
 interface FontSettings {
@@ -20,6 +21,11 @@ interface StatsEntry {
 interface StatsState {
   xpGains: StatsEntry[];
   levelUps: StatsEntry[];
+}
+
+interface ChatNotificationState {
+  keywords: string[];
+  matchCount: number;
 }
 
 const api = {
@@ -73,6 +79,15 @@ const api = {
   getChatState: (): Promise<{ logPath: string; channels: string[]; lines: ChatLine[] }> => {
     return ipcRenderer.invoke('chat:get-state');
   },
+  getChatNotificationState: (): Promise<ChatNotificationState> => {
+    return ipcRenderer.invoke('chat:get-notification-state');
+  },
+  setChatNotificationKeywords: (keywords: string[]): Promise<ChatNotificationState> => {
+    return ipcRenderer.invoke('chat:set-notification-keywords', keywords);
+  },
+  markChatNotificationsSeen: (): Promise<ChatNotificationState> => {
+    return ipcRenderer.invoke('chat:mark-notifications-seen');
+  },
   onOverlayLockStateChanged: (listener: (locked: boolean) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, locked: boolean): void => listener(locked);
     ipcRenderer.on('overlay:lock-state-changed', handler);
@@ -112,6 +127,18 @@ const api = {
     ipcRenderer.on('chat:state-changed', handler);
     return (): void => {
       ipcRenderer.removeListener('chat:state-changed', handler);
+    };
+  },
+  onChatNotificationStateChanged: (
+    listener: (state: ChatNotificationState) => void
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      state: ChatNotificationState
+    ): void => listener(state);
+    ipcRenderer.on('chat:notification-state-changed', handler);
+    return (): void => {
+      ipcRenderer.removeListener('chat:notification-state-changed', handler);
     };
   }
 };

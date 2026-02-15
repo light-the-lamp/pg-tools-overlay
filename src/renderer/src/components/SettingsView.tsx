@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
-import type { FontSettings } from './types';
+import type { ChatNotificationState, FontSettings } from './types';
 
 export default function SettingsView(): React.JSX.Element {
   const [opacity, setOpacity] = useState(100);
   const [fontSettings, setFontSettings] = useState<FontSettings>({ size: 12, color: '#eef3ff' });
+  const [chatNotificationState, setChatNotificationState] = useState<ChatNotificationState>({
+    keywords: [],
+    matchCount: 0
+  });
+  const [keywordsInput, setKeywordsInput] = useState('');
 
   useEffect(() => {
     void window.api.getOverlayOpacity().then((value) => {
@@ -30,6 +35,21 @@ export default function SettingsView(): React.JSX.Element {
     };
   }, []);
 
+  useEffect(() => {
+    void window.api.getChatNotificationState().then((state) => {
+      setChatNotificationState(state);
+      setKeywordsInput(state.keywords.join('\n'));
+    });
+
+    const unsubscribe = window.api.onChatNotificationStateChanged((state) => {
+      setChatNotificationState(state);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   const onOpacityChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const nextPercent = Number(event.target.value);
     setOpacity(nextPercent);
@@ -46,6 +66,17 @@ export default function SettingsView(): React.JSX.Element {
     const nextColor = event.target.value;
     setFontSettings((current) => ({ ...current, color: nextColor }));
     void window.api.setFontSettings({ ...fontSettings, color: nextColor });
+  };
+
+  const saveNotificationKeywords = (): void => {
+    const keywords = keywordsInput
+      .split(/\r?\n/)
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+    void window.api.setChatNotificationKeywords(keywords).then((state) => {
+      setChatNotificationState(state);
+      setKeywordsInput(state.keywords.join('\n'));
+    });
   };
 
   return (
@@ -85,6 +116,21 @@ export default function SettingsView(): React.JSX.Element {
         type="color"
         value={fontSettings.color}
       />
+      <label className="slider-label" htmlFor="chat-keywords">
+        Chat Alert Keywords (one per line)
+      </label>
+      <textarea
+        className="keywords-input"
+        id="chat-keywords"
+        onChange={(event) => setKeywordsInput(event.target.value)}
+        placeholder="boss&#10;myname&#10;help"
+        rows={6}
+        value={keywordsInput}
+      />
+      <button className="save-keywords-btn" onClick={saveNotificationKeywords} type="button">
+        Save Alert Keywords
+      </button>
+      <p className="settings-hint">Matches detected: {chatNotificationState.matchCount}</p>
     </main>
   );
 }

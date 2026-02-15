@@ -1,6 +1,6 @@
 {
   "name": "pg-tools",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "An overlay application for Project: Gorgon",
   "main": "./out/main/index.js",
   "author": "Lamplighter",
@@ -24,7 +24,8 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "react-icons": "^5.5.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",

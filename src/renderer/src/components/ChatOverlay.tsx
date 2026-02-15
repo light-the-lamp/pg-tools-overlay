@@ -12,6 +12,8 @@ export default function ChatOverlay(): React.JSX.Element {
   const dragBarRef = useRef<HTMLElement | null>(null);
   const logListRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
+  const lastProcessedLineIdRef = useRef(0);
+  const [channelAlerts, setChannelAlerts] = useState<Set<string>>(new Set());
 
   const minimizeWindow = (): void => {
     void window.api.minimizeWindow();
@@ -113,6 +115,31 @@ export default function ChatOverlay(): React.JSX.Element {
   }, [chatState.lines, selectedChannel]);
 
   useEffect(() => {
+    const newestLineId = chatState.lines[chatState.lines.length - 1]?.id ?? 0;
+    const newLines = chatState.lines.filter((line) => line.id > lastProcessedLineIdRef.current);
+    if (newLines.length === 0) {
+      lastProcessedLineIdRef.current = newestLineId;
+      return;
+    }
+
+    setChannelAlerts((current) => {
+      const next = new Set(current);
+      for (const line of newLines) {
+        if (!line.channel || line.matchCount <= 0) {
+          continue;
+        }
+        if (selectedChannel === 'All' || selectedChannel === line.channel) {
+          continue;
+        }
+        next.add(line.channel);
+      }
+      return next;
+    });
+
+    lastProcessedLineIdRef.current = newestLineId;
+  }, [chatState.lines, selectedChannel]);
+
+  useEffect(() => {
     let topBarInteractive = false;
 
     const setTopBarInteractive = (interactive: boolean): void => {
@@ -171,6 +198,22 @@ export default function ChatOverlay(): React.JSX.Element {
     selectedChannel === 'All' || chatState.channels.includes(selectedChannel)
       ? selectedChannel
       : 'All';
+
+  useEffect(() => {
+    if (activeChannel === 'All') {
+      setChannelAlerts(new Set());
+      return;
+    }
+
+    setChannelAlerts((current) => {
+      if (!current.has(activeChannel)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(activeChannel);
+      return next;
+    });
+  }, [activeChannel]);
 
   const filteredLines = useMemo(() => {
     if (activeChannel === 'All') return chatState.lines;
@@ -251,15 +294,15 @@ export default function ChatOverlay(): React.JSX.Element {
             Channel
           </label>
           <select
-            className="channel-select"
+            className={`channel-select${channelAlerts.size > 0 ? ' has-alert' : ''}`}
             id="channel-select"
             onChange={(event) => setSelectedChannel(event.target.value)}
             value={activeChannel}
           >
-            <option value="All">All</option>
+            <option value="All">{channelAlerts.size > 0 ? 'All (new)' : 'All'}</option>
             {chatState.channels.map((channel) => (
               <option key={channel} value={channel}>
-                {channel}
+                {channelAlerts.has(channel) ? `* ${channel}` : channel}
               </option>
             ))}
           </select>
@@ -277,7 +320,11 @@ export default function ChatOverlay(): React.JSX.Element {
           }
         >
           {filteredLines.map((line) => (
-            <p className="log-line" key={line.id}>
+            <p
+              className={`log-line${line.matchCount > 0 ? ' matched' : ''}`}
+              key={line.id}
+              title={line.matchCount > 0 ? `Keyword matches: ${line.matchCount}` : undefined}
+            >
               {line.text}
             </p>
           ))}

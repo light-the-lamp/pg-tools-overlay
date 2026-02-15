@@ -9,6 +9,7 @@ interface ChatLine {
   id: number;
   channel: string | null;
   text: string;
+  matchCount: number;
 }
 
 interface ChatState {
@@ -25,6 +26,12 @@ interface FontSettings {
 interface AppSettings {
   overlayOpacity: number;
   fontSettings: FontSettings;
+  chatNotificationKeywords: string[];
+}
+
+interface ChatNotificationState {
+  keywords: string[];
+  matchCount: number;
 }
 
 interface StatsEntry {
@@ -68,6 +75,9 @@ let currentLogOffset = 0;
 let logPollInterval: NodeJS.Timeout | null = null;
 let logPollInFlight = false;
 const maxChatLines = 600;
+let chatNotificationKeywords: string[] = [];
+let chatNotificationMatchCount = 0;
+const ignoredNotificationChannels = new Set(['combat', 'emotes']);
 
 function getDateKey(date: Date): string {
   const yy = String(date.getFullYear()).slice(-2);
@@ -101,6 +111,77 @@ function stripLeadingDate(line: string): string {
   return trimmed;
 }
 
+function sanitizeNotificationKeywords(keywords: unknown): string[] {
+  if (!Array.isArray(keywords)) {
+    return [];
+  }
+
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of keywords) {
+    if (typeof raw !== 'string') {
+      continue;
+    }
+    const next = raw.trim();
+    if (!next) {
+      continue;
+    }
+
+    const key = next.toLocaleLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    normalized.push(next);
+  }
+
+  return normalized;
+}
+
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getMatchableChatText(text: string): string {
+  const withoutTimeAndChannel = text.replace(
+    /^\s*(?:\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?\s*)?\[[^\]]+\]\s*/i,
+    ''
+  );
+  const withoutSpeaker = withoutTimeAndChannel.replace(/^[^:]{1,40}:\s*/, '');
+  return withoutSpeaker || withoutTimeAndChannel || text;
+}
+
+function isNotificationIgnoredChannel(channel: string | null): boolean {
+  if (!channel) {
+    return false;
+  }
+
+  return ignoredNotificationChannels.has(channel.trim().toLocaleLowerCase());
+}
+
+function countNotificationMatches(text: string, channel: string | null): number {
+  if (isNotificationIgnoredChannel(channel)) {
+    return 0;
+  }
+
+  if (!text || chatNotificationKeywords.length === 0) {
+    return 0;
+  }
+
+  const lowerText = getMatchableChatText(text).toLocaleLowerCase();
+  let matches = 0;
+  for (const keyword of chatNotificationKeywords) {
+    const pattern = new RegExp(escapeRegex(keyword.toLocaleLowerCase()), 'g');
+    const keywordMatches = lowerText.match(pattern);
+    if (keywordMatches) {
+      matches += keywordMatches.length;
+    }
+  }
+
+  return matches;
+}
+
 function parseChatLine(line: string): ChatLine {
   const normalized = stripLeadingDate(line);
   const channelMatch = normalized.match(/\[([^\]]+)\]/);
@@ -108,7 +189,8 @@ function parseChatLine(line: string): ChatLine {
   return {
     id: ++chatLineId,
     channel,
-    text: normalized
+    text: normalized,
+    matchCount: countNotificationMatches(normalized, channel)
   };
 }
 
@@ -120,11 +202,31 @@ function getChatState(): ChatState {
   };
 }
 
+function getChatNotificationState(): ChatNotificationState {
+  return {
+    keywords: chatNotificationKeywords,
+    matchCount: chatNotificationMatchCount
+  };
+}
+
 function broadcastChatState(): void {
   const state = getChatState();
   for (const window of overlayWindows) {
     window.webContents.send('chat:state-changed', state);
   }
+}
+
+function broadcastChatNotificationState(): void {
+  const state = getChatNotificationState();
+  for (const window of overlayWindows) {
+    window.webContents.send('chat:notification-state-changed', state);
+  }
+  for (const menuWindow of menuWindows.values()) {
+    if (!menuWindow.isDestroyed()) {
+      menuWindow.webContents.send('chat:notification-state-changed', state);
+    }
+  }
+  settingsWindow?.webContents.send('chat:notification-state-changed', state);
 }
 
 function broadcastFontSettings(): void {
@@ -172,7 +274,8 @@ function broadcastStats(): void {
 function getSettingsPayload(): AppSettings {
   return {
     overlayOpacity,
-    fontSettings: overlayFontSettings
+    fontSettings: overlayFontSettings,
+    chatNotificationKeywords
   };
 }
 
@@ -194,9 +297,11 @@ async function loadAppSettings(): Promise<void> {
       typeof nextFont?.color === 'string' && nextFont.color.trim()
         ? nextFont.color.trim()
         : overlayFontSettings.color;
+    const nextNotificationKeywords = sanitizeNotificationKeywords(parsed.chatNotificationKeywords);
 
     overlayOpacity = nextOpacity;
     overlayFontSettings = { size: nextFontSize, color: nextFontColor };
+    chatNotificationKeywords = nextNotificationKeywords;
   } catch {
     // No settings yet or invalid JSON; keep defaults
   }
@@ -223,6 +328,7 @@ function clearChatState(): void {
   chatChannels.clear();
   chatPartialLine = '';
   chatLineId = 0;
+  chatNotificationMatchCount = 0;
   xpBySkill.clear();
   levelUpsBySkill.clear();
 }
@@ -256,6 +362,7 @@ function trackStatsForLine(line: string): boolean {
 function ingestChatLines(lines: string[]): boolean {
   let changed = false;
   let statsChanged = false;
+  let notificationChanged = false;
 
   for (const raw of lines) {
     const line = raw.trim();
@@ -265,6 +372,10 @@ function ingestChatLines(lines: string[]): boolean {
     statsChanged = trackStatsForLine(parsed.text) || statsChanged;
     if (parsed.channel) {
       chatChannels.add(parsed.channel);
+    }
+    if (parsed.matchCount > 0) {
+      chatNotificationMatchCount += parsed.matchCount;
+      notificationChanged = true;
     }
     chatLines.push(parsed);
     changed = true;
@@ -277,8 +388,20 @@ function ingestChatLines(lines: string[]): boolean {
   if (statsChanged) {
     broadcastStats();
   }
+  if (notificationChanged) {
+    broadcastChatNotificationState();
+  }
 
-  return changed || statsChanged;
+  return changed || statsChanged || notificationChanged;
+}
+
+function recomputeNotificationMatches(): void {
+  let nextMatchCount = 0;
+  for (const line of chatLines) {
+    line.matchCount = countNotificationMatches(line.text, line.channel);
+    nextMatchCount += line.matchCount;
+  }
+  chatNotificationMatchCount = nextMatchCount;
 }
 
 function consumeChunk(text: string, flushTail: boolean): boolean {
@@ -305,12 +428,14 @@ async function initializeCurrentLogFile(path: string): Promise<void> {
 
   if (!existsSync(path)) {
     broadcastChatState();
+    broadcastChatNotificationState();
     return;
   }
 
   const fileStat = await stat(path);
   currentLogOffset = fileStat.size;
   broadcastChatState();
+  broadcastChatNotificationState();
 }
 
 async function syncLogPathAndDate(): Promise<void> {
@@ -487,6 +612,7 @@ function createMenuWindow(parent: BrowserWindow): BrowserWindow {
     window.webContents.send('overlay:opacity-changed', overlayOpacity);
     window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     window.webContents.send('stats:state-changed', getStatsState());
+    window.webContents.send('chat:notification-state-changed', getChatNotificationState());
   });
 
   window.on('closed', () => {
@@ -568,6 +694,7 @@ function createOverlayWindow(): BrowserWindow {
     mainWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     mainWindow.webContents.send('stats:state-changed', getStatsState());
     mainWindow.webContents.send('chat:state-changed', getChatState());
+    mainWindow.webContents.send('chat:notification-state-changed', getChatNotificationState());
   });
   mainWindow.on('closed', () => {
     const menuWindow = menuWindows.get(mainWindow);
@@ -662,6 +789,9 @@ function createSettingsWindow(): BrowserWindow {
 
   window.on('ready-to-show', () => {
     window.show();
+  });
+  window.webContents.on('did-finish-load', () => {
+    window.webContents.send('chat:notification-state-changed', getChatNotificationState());
   });
   window.on('closed', () => {
     settingsWindow = null;
@@ -922,6 +1052,24 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('chat:get-state', () => getChatState());
+  ipcMain.handle('chat:get-notification-state', () => getChatNotificationState());
+  ipcMain.handle('chat:set-notification-keywords', (_event, keywords: unknown) => {
+    chatNotificationKeywords = sanitizeNotificationKeywords(keywords);
+    recomputeNotificationMatches();
+    broadcastChatState();
+    broadcastChatNotificationState();
+    void persistAppSettings();
+    return getChatNotificationState();
+  });
+  ipcMain.handle('chat:mark-notifications-seen', () => {
+    if (chatNotificationMatchCount === 0) {
+      return getChatNotificationState();
+    }
+
+    chatNotificationMatchCount = 0;
+    broadcastChatNotificationState();
+    return getChatNotificationState();
+  });
   ipcMain.handle('stats:get-state', () => getStatsState());
 
   createOverlayWindow();

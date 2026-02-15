@@ -44,6 +44,43 @@
   background: rgba(43, 56, 86, 0.92);
 }
 
+.menu-btn-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 6px;
+}
+
+.menu-btn-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.menu-btn-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.menu-alert-badge {
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #d64444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .menu-btn.secondary {
   background: rgba(16, 22, 36, 0.92);
   color: rgba(236, 241, 255, 0.82);

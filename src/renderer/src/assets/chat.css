@@ -41,6 +41,11 @@
   color: #eef3ff;
 }
 
+.channel-select.has-alert {
+  border-color: rgba(236, 83, 83, 0.9);
+  box-shadow: 0 0 0 1px rgba(236, 83, 83, 0.35);
+}
+
 .log-list {
   flex: 1 1 auto;
   height:150px;
@@ -62,6 +67,13 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.log-line.matched {
+  background: rgba(214, 68, 68, 0.2);
+  border-left: 2px solid rgba(236, 83, 83, 0.95);
+  padding-left: 6px;
+  border-radius: 4px;
 }
 
 .log-empty {
