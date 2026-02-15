@@ -1,19 +1,4 @@
-import { useEffect, useState } from 'react';
-
 export default function MenuView(): React.JSX.Element {
-  const [isLocked, setIsLocked] = useState(false);
-
-  useEffect(() => {
-    void window.api.getOverlayLocked().then(setIsLocked);
-    const unsubscribe = window.api.onOverlayLockStateChanged((locked) => {
-      setIsLocked(locked);
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
   const openStats = (): void => {
     void window.api.openStatsWindow();
   };

@@ -224,7 +224,7 @@ function clearChatState(): void {
 }
 
 function trackStatsForLine(line: string): boolean {
-  const xpMatch = line.match(/[Status] You earned (\d+)\s*XP\b/i);
+  const xpMatch = line.match(/\[Status] You earned (\d+)\s*XP\b/i);
   const skillMatch = line.match(/ in ([^.!]+?)(?:[.!]|$)/i);
   const levelUpMatch = line.match(/reached level \d+\s+in ([^.!]+?)(?:[.!]|$)/i);
   let changed = false;
