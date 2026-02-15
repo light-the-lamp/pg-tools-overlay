@@ -281,17 +281,13 @@ export default function ChatOverlay(): React.JSX.Element {
               {line.text}
             </p>
           ))}
-          {filteredLines.length === 0 && (
-            <p className="log-empty">No messages for current filter.</p>
-          )}
+          {filteredLines.length === 0 && <p className="log-empty">No messages.</p>}
         </div>
 
         <p className="status-line">
           Mode: <strong>{isLocked ? 'Locked (click-through)' : 'Unlocked (interactive)'}</strong>
         </p>
-        <p className="status-line file-path">
-          'If you need help with this app, talk to Lamplighter'
-        </p>
+        <p className="status-line file-path">If you need help with this app, talk to Lamplighter</p>
       </section>
 
       <div

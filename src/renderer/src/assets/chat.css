@@ -2,8 +2,9 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
   padding: 10px;
   overflow: hidden;
 }
@@ -41,8 +42,8 @@
 }
 
 .log-list {
-  flex: 0 0 auto;
-  height: 220px;
+  flex: 1 1 auto;
+  height:150px;
   overflow-y: auto;
   overflow-x: hidden;
   border: 1px solid rgba(255, 255, 255, 0.14);
