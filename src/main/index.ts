@@ -29,6 +29,7 @@ interface AppSettings {
   chatNotificationKeywords: string[];
   lootTrackerObjectives: LootObjectiveConfig[];
   lootTrackerCounts: Record<string, number>;
+  combatSkillWatcherSkills: string[];
 }
 
 interface ChatNotificationState {
@@ -51,6 +52,10 @@ interface LootTrackerState {
   objectives: LootObjective[];
 }
 
+interface CombatSkillWatcherState {
+  selectedSkills: string[];
+}
+
 interface StatsEntry {
   skill: string;
   value: number;
@@ -66,6 +71,7 @@ let settingsWindow: BrowserWindow | null = null;
 let statsWindow: BrowserWindow | null = null;
 let surveyorWindow: BrowserWindow | null = null;
 let lootTrackerWindow: BrowserWindow | null = null;
+let combatSkillWatcherWindow: BrowserWindow | null = null;
 let overlayLocked = false;
 let overlayOpacity = 1;
 let overlayFontSettings: FontSettings = { size: 12, color: '#eef3ff' };
@@ -98,6 +104,7 @@ let chatNotificationMatchCount = 0;
 const ignoredNotificationChannels = new Set(['combat', 'emotes']);
 let lootTrackerObjectives: LootObjectiveConfig[] = [];
 const lootCountsByItem = new Map<string, number>();
+let combatSkillWatcherSkills: string[] = [];
 
 function getDateKey(date: Date): string {
   const yy = String(date.getFullYear()).slice(-2);
@@ -207,6 +214,35 @@ function sanitizeLootCount(value: unknown): number {
   }
 
   return Math.max(0, next);
+}
+
+function sanitizeCombatSkillWatcherSkills(skills: unknown): string[] {
+  if (!Array.isArray(skills)) {
+    return [];
+  }
+
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of skills) {
+    if (typeof raw !== 'string') {
+      continue;
+    }
+
+    const next = raw.trim();
+    if (!next) {
+      continue;
+    }
+
+    const key = next.toLocaleLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    normalized.push(next);
+  }
+
+  return normalized;
 }
 
 function sanitizeLootTrackerCounts(
@@ -420,6 +456,12 @@ function getLootTrackerState(): LootTrackerState {
   };
 }
 
+function getCombatSkillWatcherState(): CombatSkillWatcherState {
+  return {
+    selectedSkills: combatSkillWatcherSkills
+  };
+}
+
 function broadcastChatState(): void {
   const state = getChatState();
   for (const window of overlayWindows) {
@@ -447,6 +489,13 @@ function broadcastLootTrackerState(): void {
   }
 }
 
+function broadcastCombatSkillWatcherState(): void {
+  const state = getCombatSkillWatcherState();
+  if (combatSkillWatcherWindow && !combatSkillWatcherWindow.isDestroyed()) {
+    combatSkillWatcherWindow.webContents.send('combat-skill-watcher:state-changed', state);
+  }
+}
+
 function broadcastFontSettings(): void {
   for (const window of overlayWindows) {
     window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
@@ -464,6 +513,9 @@ function broadcastFontSettings(): void {
   }
   if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
     lootTrackerWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+  }
+  if (combatSkillWatcherWindow && !combatSkillWatcherWindow.isDestroyed()) {
+    combatSkillWatcherWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
   }
   settingsWindow?.webContents.send('overlay:font-settings-changed', overlayFontSettings);
 }
@@ -489,6 +541,7 @@ function broadcastStats(): void {
     }
   }
   statsWindow?.webContents.send('stats:state-changed', state);
+  combatSkillWatcherWindow?.webContents.send('stats:state-changed', state);
   settingsWindow?.webContents.send('stats:state-changed', state);
 }
 
@@ -498,7 +551,8 @@ function getSettingsPayload(): AppSettings {
     fontSettings: overlayFontSettings,
     chatNotificationKeywords,
     lootTrackerObjectives,
-    lootTrackerCounts: getPersistableLootTrackerCounts()
+    lootTrackerCounts: getPersistableLootTrackerCounts(),
+    combatSkillWatcherSkills
   };
 }
 
@@ -523,11 +577,13 @@ async function loadAppSettings(): Promise<void> {
     const nextNotificationKeywords = sanitizeNotificationKeywords(parsed.chatNotificationKeywords);
     const nextLootObjectives = sanitizeLootTrackerObjectives(parsed.lootTrackerObjectives);
     const nextLootCounts = sanitizeLootTrackerCounts(parsed.lootTrackerCounts, nextLootObjectives);
+    const nextCombatSkills = sanitizeCombatSkillWatcherSkills(parsed.combatSkillWatcherSkills);
 
     overlayOpacity = nextOpacity;
     overlayFontSettings = { size: nextFontSize, color: nextFontColor };
     chatNotificationKeywords = nextNotificationKeywords;
     lootTrackerObjectives = nextLootObjectives;
+    combatSkillWatcherSkills = nextCombatSkills;
     lootCountsByItem.clear();
     for (const [itemName, count] of nextLootCounts) {
       lootCountsByItem.set(itemName, count);
@@ -563,22 +619,32 @@ function clearChatState(): void {
   levelUpsBySkill.clear();
 }
 
+function parseStatusXpLine(line: string): { skill: string; gained: number } | null {
+  const match = line.match(/\[Status]\s+You earned\s+(\d+)\s*XP\s+in\s+([^.!]+?)(?:[.!]|$)/i);
+  if (!match) {
+    return null;
+  }
+
+  const gained = Number(match[1]);
+  const skill = match[2].trim();
+  if (!Number.isFinite(gained) || gained <= 0 || !skill) {
+    return null;
+  }
+
+  return { skill, gained };
+}
+
 function trackStatsForLine(line: string): boolean {
-  const xpMatch = line.match(/\[Status] You earned (\d+)\s*XP\b/i);
-  const skillMatch = line.match(/ in ([^.!]+?)(?:[.!]|$)/i);
+  const xpStatus = parseStatusXpLine(line);
   const levelUpMatch = line.match(/reached level \d+\s+in ([^.!]+?)(?:[.!]|$)/i);
   let changed = false;
 
-  if (xpMatch && skillMatch) {
-    const gained = Number(xpMatch[1]);
-    const skill = skillMatch[1].trim();
-    if (Number.isFinite(gained) && skill) {
-      xpBySkill.set(skill, (xpBySkill.get(skill) ?? 0) + gained);
-      changed = true;
-    }
+  if (xpStatus) {
+    xpBySkill.set(xpStatus.skill, (xpBySkill.get(xpStatus.skill) ?? 0) + xpStatus.gained);
+    changed = true;
   }
 
-  if (xpMatch && levelUpMatch) {
+  if (xpStatus && levelUpMatch) {
     const skill = levelUpMatch[1].trim();
     if (skill) {
       levelUpsBySkill.set(skill, (levelUpsBySkill.get(skill) ?? 0) + 1);
@@ -780,6 +846,9 @@ function getOverlayLikeWindows(): BrowserWindow[] {
   if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
     windows.push(lootTrackerWindow);
   }
+  if (combatSkillWatcherWindow && !combatSkillWatcherWindow.isDestroyed()) {
+    windows.push(combatSkillWatcherWindow);
+  }
   return windows;
 }
 
@@ -949,6 +1018,7 @@ function createOverlayWindow(): BrowserWindow {
       !statsWindow &&
       !surveyorWindow &&
       !lootTrackerWindow &&
+      !combatSkillWatcherWindow &&
       mouseTrackingInterval
     ) {
       clearInterval(mouseTrackingInterval);
@@ -1223,6 +1293,73 @@ function createLootTrackerWindow(): BrowserWindow {
   return window;
 }
 
+function createCombatSkillWatcherWindow(): BrowserWindow {
+  if (combatSkillWatcherWindow && !combatSkillWatcherWindow.isDestroyed()) {
+    combatSkillWatcherWindow.focus();
+    return combatSkillWatcherWindow;
+  }
+
+  const window = new BrowserWindow({
+    width: 420,
+    height: 460,
+    minWidth: 340,
+    minHeight: 300,
+    resizable: true,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: true,
+    autoHideMenuBar: true,
+    alwaysOnTop: true,
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'linux' ? { icon } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  });
+
+  window.setTitle('Combat Skill Watcher - pg-tools');
+  applyOverlayTraits(window);
+  syncMousePassthrough(window);
+
+  window.on('ready-to-show', () => {
+    applyOverlayTraits(window);
+    window.show();
+  });
+  window.on('focus', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('restore', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('closed', () => {
+    combatSkillWatcherWindow = null;
+    if (
+      overlayWindows.size === 0 &&
+      !statsWindow &&
+      !surveyorWindow &&
+      !lootTrackerWindow &&
+      mouseTrackingInterval
+    ) {
+      clearInterval(mouseTrackingInterval);
+      mouseTrackingInterval = null;
+    }
+  });
+
+  window.webContents.on('did-finish-load', () => {
+    window.webContents.send('overlay:lock-state-changed', overlayLocked);
+    window.webContents.send('overlay:opacity-changed', overlayOpacity);
+    window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    window.webContents.send('stats:state-changed', getStatsState());
+    window.webContents.send('combat-skill-watcher:state-changed', getCombatSkillWatcherState());
+  });
+
+  loadRenderer(window, 'combat-skill-watcher');
+  combatSkillWatcherWindow = window;
+  return window;
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.pgtools');
   await loadAppSettings();
@@ -1273,6 +1410,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('window:open-loot-tracker', () => {
     createLootTrackerWindow();
+  });
+
+  ipcMain.handle('window:open-combat-skill-watcher', () => {
+    createCombatSkillWatcherWindow();
   });
 
   ipcMain.handle('window:open-chat', () => {
@@ -1331,6 +1472,10 @@ app.whenReady().then(async () => {
       lootTrackerWindow.setOpacity(nextOpacity);
       lootTrackerWindow.webContents.send('overlay:opacity-changed', nextOpacity);
     }
+    if (combatSkillWatcherWindow && !combatSkillWatcherWindow.isDestroyed()) {
+      combatSkillWatcherWindow.setOpacity(nextOpacity);
+      combatSkillWatcherWindow.webContents.send('overlay:opacity-changed', nextOpacity);
+    }
     settingsWindow?.webContents.send('overlay:opacity-changed', nextOpacity);
     void persistAppSettings();
     return overlayOpacity;
@@ -1359,6 +1504,9 @@ app.whenReady().then(async () => {
     }
     if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
       lootTrackerWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    }
+    if (combatSkillWatcherWindow && !combatSkillWatcherWindow.isDestroyed()) {
+      combatSkillWatcherWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     }
     void persistAppSettings();
     return overlayFontSettings;
@@ -1417,6 +1565,13 @@ app.whenReady().then(async () => {
     broadcastLootTrackerState();
     void persistAppSettings();
     return getLootTrackerState();
+  });
+  ipcMain.handle('combat-skill-watcher:get-state', () => getCombatSkillWatcherState());
+  ipcMain.handle('combat-skill-watcher:set-selected-skills', (_event, skills: unknown) => {
+    combatSkillWatcherSkills = sanitizeCombatSkillWatcherSkills(skills);
+    broadcastCombatSkillWatcherState();
+    void persistAppSettings();
+    return getCombatSkillWatcherState();
   });
 
   createOverlayWindow();

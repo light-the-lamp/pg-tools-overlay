@@ -43,6 +43,10 @@ interface LootTrackerState {
   objectives: LootObjective[];
 }
 
+interface CombatSkillWatcherState {
+  selectedSkills: string[];
+}
+
 const api = {
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
   closeWindow: (): Promise<void> => ipcRenderer.invoke('window:close'),
@@ -72,6 +76,9 @@ const api = {
   },
   openLootTrackerWindow: (): Promise<void> => {
     return ipcRenderer.invoke('window:open-loot-tracker');
+  },
+  openCombatSkillWatcherWindow: (): Promise<void> => {
+    return ipcRenderer.invoke('window:open-combat-skill-watcher');
   },
   openChatWindow: (): Promise<void> => {
     return ipcRenderer.invoke('window:open-chat');
@@ -114,6 +121,12 @@ const api = {
   },
   setLootTrackerObjectiveCount: (itemName: string, count: number): Promise<LootTrackerState> => {
     return ipcRenderer.invoke('loot-tracker:set-objective-count', { itemName, count });
+  },
+  getCombatSkillWatcherState: (): Promise<CombatSkillWatcherState> => {
+    return ipcRenderer.invoke('combat-skill-watcher:get-state');
+  },
+  setCombatSkillWatcherSkills: (skills: string[]): Promise<CombatSkillWatcherState> => {
+    return ipcRenderer.invoke('combat-skill-watcher:set-selected-skills', skills);
   },
   onOverlayLockStateChanged: (listener: (locked: boolean) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, locked: boolean): void => listener(locked);
@@ -174,6 +187,16 @@ const api = {
     ipcRenderer.on('loot-tracker:state-changed', handler);
     return (): void => {
       ipcRenderer.removeListener('loot-tracker:state-changed', handler);
+    };
+  },
+  onCombatSkillWatcherStateChanged: (
+    listener: (state: CombatSkillWatcherState) => void
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: CombatSkillWatcherState): void =>
+      listener(state);
+    ipcRenderer.on('combat-skill-watcher:state-changed', handler);
+    return (): void => {
+      ipcRenderer.removeListener('combat-skill-watcher:state-changed', handler);
     };
   }
 };

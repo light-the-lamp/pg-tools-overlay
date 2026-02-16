@@ -45,3 +45,7 @@ export interface LootObjectiveConfig {
 export interface LootTrackerState {
   objectives: LootObjective[];
 }
+
+export interface CombatSkillWatcherState {
+  selectedSkills: string[];
+}

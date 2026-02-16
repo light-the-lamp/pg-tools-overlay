@@ -1,0 +1,145 @@
+.combat-skill-watcher-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.combat-skill-watcher-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.combat-skill-watcher-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(12, 18, 30, 0.85);
+  color: #eef3ff;
+}
+
+.combat-skill-watcher-btn {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 5px 10px;
+  background: rgba(23, 32, 50, 0.92);
+  color: #eef3ff;
+  cursor: pointer;
+}
+
+.combat-skill-watcher-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.combat-skill-watcher-btn-danger {
+  background: rgba(214, 68, 68, 0.24);
+}
+
+.combat-skill-watcher-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.combat-skill-watcher-btn-danger:hover {
+  background: rgba(214, 68, 68, 0.58);
+}
+
+.combat-skill-watcher-suggestions {
+  display: grid;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 11, 20, 0.5);
+  padding: 4px;
+}
+
+.combat-skill-watcher-suggestion-item {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.07);
+  color: #eef3ff;
+  cursor: pointer;
+}
+
+.combat-skill-watcher-suggestion-item:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.combat-skill-watcher-list {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(8, 11, 20, 0.5);
+  padding: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.combat-skill-watcher-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 24px;
+  font-size: 12px;
+  color: #eef3ff;
+}
+
+.combat-skill-watcher-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.combat-skill-watcher-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 50%;
+}
+
+.combat-skill-watcher-status.is-match {
+  color: #8ff0b5;
+  background: rgba(34, 130, 73, 0.35);
+}
+
+.combat-skill-watcher-status.is-missing {
+  color: #ff9f9f;
+  background: rgba(165, 56, 56, 0.35);
+}
+
+.combat-skill-watcher-remove-btn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: rgba(214, 68, 68, 0.24);
+  color: #eef3ff;
+  cursor: pointer;
+}
+
+.combat-skill-watcher-remove-btn:hover {
+  background: rgba(214, 68, 68, 0.58);
+}
+
+.combat-skill-watcher-empty {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(236, 241, 255, 0.72);
+}

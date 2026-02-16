@@ -3,6 +3,7 @@ import { PiTreasureChest } from 'react-icons/pi';
 import { IoStatsChart } from 'react-icons/io5';
 import { HiOutlineChatAlt2 } from 'react-icons/hi';
 import { MdOutlineChecklist } from 'react-icons/md';
+import { LuSwords } from 'react-icons/lu';
 import type { ChatNotificationState } from './types';
 
 export default function MenuView(): React.JSX.Element {
@@ -38,6 +39,10 @@ export default function MenuView(): React.JSX.Element {
     void window.api.openLootTrackerWindow();
   };
 
+  const openCombatSkillWatcherWindow = (): void => {
+    void window.api.openCombatSkillWatcherWindow();
+  };
+
   return (
     <main className="overlay-shell menu-shell no-drag">
       <p className="menu-title">Menu</p>
@@ -71,8 +76,14 @@ export default function MenuView(): React.JSX.Element {
             <MdOutlineChecklist className="menu-btn-icon" />
           </span>
         </button>
+        <button className="menu-btn" onClick={openCombatSkillWatcherWindow} type="button">
+          <span className="menu-btn-content">
+            <span>Combat Skill Watcher</span>
+            <LuSwords className="menu-btn-icon" />
+          </span>
+        </button>
       </div>
-      <p className="menu-footer">More tools coming soon.</p>
+      <p className="menu-footer">More tools coming soon. (maybe)</p>
     </main>
   );
 }

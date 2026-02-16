@@ -48,6 +48,10 @@ interface LootTrackerState {
   objectives: LootObjective[]
 }
 
+interface CombatSkillWatcherState {
+  selectedSkills: string[]
+}
+
 interface OverlayAPI {
   minimizeWindow: () => Promise<void>
   closeWindow: () => Promise<void>
@@ -64,6 +68,7 @@ interface OverlayAPI {
   openStatsWindow: () => Promise<void>
   openSurveyorWindow: () => Promise<void>
   openChatWindow: () => Promise<void>
+  openCombatSkillWatcherWindow: () => Promise<void>
   toggleMenuWindow: () => Promise<void>
   getOverlayOpacity: () => Promise<number>
   setOverlayOpacity: (opacity: number) => Promise<number>
@@ -78,6 +83,8 @@ interface OverlayAPI {
   getLootTrackerState: () => Promise<LootTrackerState>
   setLootTrackerObjectives: (objectives: LootObjectiveConfig[]) => Promise<LootTrackerState>
   setLootTrackerObjectiveCount: (itemName: string, count: number) => Promise<LootTrackerState>
+  getCombatSkillWatcherState: () => Promise<CombatSkillWatcherState>
+  setCombatSkillWatcherSkills: (skills: string[]) => Promise<CombatSkillWatcherState>
   onOverlayLockStateChanged: (listener: (locked: boolean) => void) => () => void
   onOverlayOpacityChanged: (listener: (opacity: number) => void) => () => void
   onFontSettingsChanged: (listener: (settings: FontSettings) => void) => () => void
@@ -85,6 +92,7 @@ interface OverlayAPI {
   onChatStateChanged: (listener: (state: ChatState) => void) => () => void
   onChatNotificationStateChanged: (listener: (state: ChatNotificationState) => void) => () => void
   onLootTrackerStateChanged: (listener: (state: LootTrackerState) => void) => () => void
+  onCombatSkillWatcherStateChanged: (listener: (state: CombatSkillWatcherState) => void) => () => void
 }
 
 declare global {

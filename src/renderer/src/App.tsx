@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import ChatOverlay from './components/ChatOverlay';
+import CombatSkillWatcherView from './components/CombatSkillWatcherView';
 import MenuView from './components/MenuView';
 import LootTrackerView from './components/LootTrackerView';
 import SettingsView from './components/SettingsView';
@@ -42,6 +43,9 @@ function App(): React.JSX.Element {
   }
   if (window.location.hash === '#loot-tracker') {
     return <LootTrackerView />;
+  }
+  if (window.location.hash === '#combat-skill-watcher') {
+    return <CombatSkillWatcherView />;
   }
   return <ChatOverlay />;
 }
