@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import { open, stat, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
-import icon from '../../resources/icon.png?asset';
+import icon from '../../build/icon.png?asset';
 
 interface ChatLine {
   id: number;
@@ -1506,7 +1506,10 @@ app.whenReady().then(async () => {
       lootTrackerWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     }
     if (combatSkillWatcherWindow && !combatSkillWatcherWindow.isDestroyed()) {
-      combatSkillWatcherWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+      combatSkillWatcherWindow.webContents.send(
+        'overlay:font-settings-changed',
+        overlayFontSettings
+      );
     }
     void persistAppSettings();
     return overlayFontSettings;
