@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { PiTreasureChest } from 'react-icons/pi';
 import { IoStatsChart } from 'react-icons/io5';
 import { HiOutlineChatAlt2 } from 'react-icons/hi';
+import { MdOutlineChecklist } from 'react-icons/md';
 import type { ChatNotificationState } from './types';
 
 export default function MenuView(): React.JSX.Element {
@@ -33,6 +34,10 @@ export default function MenuView(): React.JSX.Element {
     void window.api.openSurveyorWindow();
   };
 
+  const openLootTrackerWindow = (): void => {
+    void window.api.openLootTrackerWindow();
+  };
+
   return (
     <main className="overlay-shell menu-shell no-drag">
       <p className="menu-title">Menu</p>
@@ -58,6 +63,12 @@ export default function MenuView(): React.JSX.Element {
           <span className="menu-btn-content">
             <span>Surveyor</span>
             <PiTreasureChest className="menu-btn-icon" />
+          </span>
+        </button>
+        <button className="menu-btn" onClick={openLootTrackerWindow} type="button">
+          <span className="menu-btn-content">
+            <span>Loot Tracker</span>
+            <MdOutlineChecklist className="menu-btn-icon" />
           </span>
         </button>
       </div>

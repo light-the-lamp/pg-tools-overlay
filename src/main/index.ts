@@ -27,11 +27,28 @@ interface AppSettings {
   overlayOpacity: number;
   fontSettings: FontSettings;
   chatNotificationKeywords: string[];
+  lootTrackerObjectives: LootObjectiveConfig[];
+  lootTrackerCounts: Record<string, number>;
 }
 
 interface ChatNotificationState {
   keywords: string[];
   matchCount: number;
+}
+
+interface LootObjective {
+  itemName: string;
+  count: number;
+  target: number;
+}
+
+interface LootObjectiveConfig {
+  itemName: string;
+  target: number;
+}
+
+interface LootTrackerState {
+  objectives: LootObjective[];
 }
 
 interface StatsEntry {
@@ -48,6 +65,7 @@ const menuWindows = new Map<BrowserWindow, BrowserWindow>();
 let settingsWindow: BrowserWindow | null = null;
 let statsWindow: BrowserWindow | null = null;
 let surveyorWindow: BrowserWindow | null = null;
+let lootTrackerWindow: BrowserWindow | null = null;
 let overlayLocked = false;
 let overlayOpacity = 1;
 let overlayFontSettings: FontSettings = { size: 12, color: '#eef3ff' };
@@ -78,6 +96,8 @@ const maxChatLines = 600;
 let chatNotificationKeywords: string[] = [];
 let chatNotificationMatchCount = 0;
 const ignoredNotificationChannels = new Set(['combat', 'emotes']);
+let lootTrackerObjectives: LootObjectiveConfig[] = [];
+const lootCountsByItem = new Map<string, number>();
 
 function getDateKey(date: Date): string {
   const yy = String(date.getFullYear()).slice(-2);
@@ -139,6 +159,85 @@ function sanitizeNotificationKeywords(keywords: unknown): string[] {
   return normalized;
 }
 
+function sanitizeLootTrackerObjectives(objectives: unknown): LootObjectiveConfig[] {
+  if (!Array.isArray(objectives)) {
+    return [];
+  }
+
+  const normalized: LootObjectiveConfig[] = [];
+  const seen = new Set<string>();
+  for (const raw of objectives) {
+    let itemName = '';
+    let target = 1;
+
+    if (typeof raw === 'string') {
+      itemName = raw.trim();
+    } else if (raw && typeof raw === 'object') {
+      const maybeName = (raw as { itemName?: unknown }).itemName;
+      const maybeTarget = (raw as { target?: unknown }).target;
+      if (typeof maybeName === 'string') {
+        itemName = maybeName.trim();
+      }
+      const parsedTarget = Math.floor(Number(maybeTarget));
+      if (Number.isFinite(parsedTarget)) {
+        target = Math.max(1, parsedTarget);
+      }
+    }
+
+    if (!itemName) {
+      continue;
+    }
+
+    const key = itemName.toLocaleLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    normalized.push({ itemName, target });
+  }
+
+  return normalized;
+}
+
+function sanitizeLootCount(value: unknown): number {
+  const next = Math.floor(Number(value));
+  if (!Number.isFinite(next)) {
+    return 0;
+  }
+
+  return Math.max(0, next);
+}
+
+function sanitizeLootTrackerCounts(
+  rawCounts: unknown,
+  objectives: LootObjectiveConfig[]
+): Map<string, number> {
+  const normalized = new Map<string, number>();
+  if (!rawCounts || typeof rawCounts !== 'object') {
+    for (const objective of objectives) {
+      normalized.set(objective.itemName, 0);
+    }
+    return normalized;
+  }
+
+  const source = rawCounts as Record<string, unknown>;
+  for (const objective of objectives) {
+    normalized.set(objective.itemName, sanitizeLootCount(source[objective.itemName]));
+  }
+
+  return normalized;
+}
+
+function getPersistableLootTrackerCounts(): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const objective of lootTrackerObjectives) {
+    counts[objective.itemName] = lootCountsByItem.get(objective.itemName) ?? 0;
+  }
+
+  return counts;
+}
+
 function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -182,6 +281,108 @@ function countNotificationMatches(text: string, channel: string | null): number 
   return matches;
 }
 
+function looksLikeLootGainLine(text: string): boolean {
+  return /(inventory|you (?:receive|received|get|got|obtain|obtained|acquire|acquired|loot|looted|pick up|picked up))/i.test(
+    text
+  );
+}
+
+function parseLooseQuantity(rawValue: string | undefined): number {
+  if (!rawValue) {
+    return 1;
+  }
+
+  const parsed = Number.parseInt(rawValue.replace(/,/g, '').trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function parseLootItemAndQuantity(rawText: string): { itemName: string; quantity: number } | null {
+  const cleaned = rawText
+    .trim()
+    .replace(/^[:\-\s]+/, '')
+    .replace(/[.!]+$/, '')
+    .replace(/\s+\([^)]*\)\s*$/, '')
+    .replace(/^(?:an?|the)\s+/i, '');
+  if (!cleaned) {
+    return null;
+  }
+
+  const quantitySuffixMatch = cleaned.match(/^(.+?)\s+x\s*(\d+)$/i);
+  if (quantitySuffixMatch) {
+    return {
+      itemName: quantitySuffixMatch[1].trim(),
+      quantity: parseLooseQuantity(quantitySuffixMatch[2])
+    };
+  }
+
+  const quantityPrefixMatch = cleaned.match(/^(\d+)\s+(.+)$/);
+  if (quantityPrefixMatch) {
+    return {
+      itemName: quantityPrefixMatch[2].trim(),
+      quantity: parseLooseQuantity(quantityPrefixMatch[1])
+    };
+  }
+
+  return { itemName: cleaned, quantity: 1 };
+}
+
+function countLootForObjectiveInLine(text: string, objectiveName: string): number {
+  const normalizedText = text
+    .replace(/^\s*(?:\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?\s*)?/i, '')
+    .replace(/^(?:\[[^\]]+\]\s*)+/i, '')
+    .replace(/^[^:]{1,40}:\s*/, '')
+    .trim();
+
+  if (!looksLikeLootGainLine(normalizedText)) {
+    return 0;
+  }
+
+  const objectiveLower = objectiveName.toLocaleLowerCase();
+  const inventoryMatch = normalizedText.match(/^(.+?)\s+added to (?:your\s+)?inventory[.!]?$/i);
+  if (inventoryMatch) {
+    const parsedLoot = parseLootItemAndQuantity(inventoryMatch[1]);
+    if (!parsedLoot) {
+      return 0;
+    }
+
+    return parsedLoot.itemName.toLocaleLowerCase() === objectiveLower ? parsedLoot.quantity : 0;
+  }
+
+  const receivedMatch = normalizedText.match(
+    /^you\s+(?:receive|received|get|got|obtain|obtained|acquire|acquired|loot|looted|pick up|picked up)\s+(.+?)$/i
+  );
+  if (!receivedMatch) {
+    return 0;
+  }
+
+  const parsedLoot = parseLootItemAndQuantity(receivedMatch[1]);
+  if (!parsedLoot) {
+    return 0;
+  }
+
+  return parsedLoot.itemName.toLocaleLowerCase() === objectiveLower ? parsedLoot.quantity : 0;
+}
+
+function trackLootForLine(text: string): boolean {
+  if (lootTrackerObjectives.length === 0) {
+    return false;
+  }
+
+  let changed = false;
+  for (const objective of lootTrackerObjectives) {
+    const objectiveName = objective.itemName;
+    const gained = countLootForObjectiveInLine(text, objectiveName);
+    if (gained <= 0) {
+      continue;
+    }
+
+    lootCountsByItem.set(objectiveName, (lootCountsByItem.get(objectiveName) ?? 0) + gained);
+    changed = true;
+  }
+
+  return changed;
+}
+
 function parseChatLine(line: string): ChatLine {
   const normalized = stripLeadingDate(line);
   const channelMatch = normalized.match(/\[([^\]]+)\]/);
@@ -209,6 +410,16 @@ function getChatNotificationState(): ChatNotificationState {
   };
 }
 
+function getLootTrackerState(): LootTrackerState {
+  return {
+    objectives: lootTrackerObjectives.map((objective) => ({
+      itemName: objective.itemName,
+      count: lootCountsByItem.get(objective.itemName) ?? 0,
+      target: objective.target
+    }))
+  };
+}
+
 function broadcastChatState(): void {
   const state = getChatState();
   for (const window of overlayWindows) {
@@ -229,6 +440,13 @@ function broadcastChatNotificationState(): void {
   settingsWindow?.webContents.send('chat:notification-state-changed', state);
 }
 
+function broadcastLootTrackerState(): void {
+  const state = getLootTrackerState();
+  if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
+    lootTrackerWindow.webContents.send('loot-tracker:state-changed', state);
+  }
+}
+
 function broadcastFontSettings(): void {
   for (const window of overlayWindows) {
     window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
@@ -243,6 +461,9 @@ function broadcastFontSettings(): void {
   }
   if (surveyorWindow && !surveyorWindow.isDestroyed()) {
     surveyorWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+  }
+  if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
+    lootTrackerWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
   }
   settingsWindow?.webContents.send('overlay:font-settings-changed', overlayFontSettings);
 }
@@ -275,7 +496,9 @@ function getSettingsPayload(): AppSettings {
   return {
     overlayOpacity,
     fontSettings: overlayFontSettings,
-    chatNotificationKeywords
+    chatNotificationKeywords,
+    lootTrackerObjectives,
+    lootTrackerCounts: getPersistableLootTrackerCounts()
   };
 }
 
@@ -298,10 +521,17 @@ async function loadAppSettings(): Promise<void> {
         ? nextFont.color.trim()
         : overlayFontSettings.color;
     const nextNotificationKeywords = sanitizeNotificationKeywords(parsed.chatNotificationKeywords);
+    const nextLootObjectives = sanitizeLootTrackerObjectives(parsed.lootTrackerObjectives);
+    const nextLootCounts = sanitizeLootTrackerCounts(parsed.lootTrackerCounts, nextLootObjectives);
 
     overlayOpacity = nextOpacity;
     overlayFontSettings = { size: nextFontSize, color: nextFontColor };
     chatNotificationKeywords = nextNotificationKeywords;
+    lootTrackerObjectives = nextLootObjectives;
+    lootCountsByItem.clear();
+    for (const [itemName, count] of nextLootCounts) {
+      lootCountsByItem.set(itemName, count);
+    }
   } catch {
     // No settings yet or invalid JSON; keep defaults
   }
@@ -363,6 +593,7 @@ function ingestChatLines(lines: string[]): boolean {
   let changed = false;
   let statsChanged = false;
   let notificationChanged = false;
+  let lootChanged = false;
 
   for (const raw of lines) {
     const line = raw.trim();
@@ -370,6 +601,7 @@ function ingestChatLines(lines: string[]): boolean {
 
     const parsed = parseChatLine(line);
     statsChanged = trackStatsForLine(parsed.text) || statsChanged;
+    lootChanged = trackLootForLine(parsed.text) || lootChanged;
     if (parsed.channel) {
       chatChannels.add(parsed.channel);
     }
@@ -391,8 +623,12 @@ function ingestChatLines(lines: string[]): boolean {
   if (notificationChanged) {
     broadcastChatNotificationState();
   }
+  if (lootChanged) {
+    broadcastLootTrackerState();
+    void persistAppSettings();
+  }
 
-  return changed || statsChanged || notificationChanged;
+  return changed || statsChanged || notificationChanged || lootChanged;
 }
 
 function recomputeNotificationMatches(): void {
@@ -429,6 +665,7 @@ async function initializeCurrentLogFile(path: string): Promise<void> {
   if (!existsSync(path)) {
     broadcastChatState();
     broadcastChatNotificationState();
+    broadcastLootTrackerState();
     return;
   }
 
@@ -436,6 +673,7 @@ async function initializeCurrentLogFile(path: string): Promise<void> {
   currentLogOffset = fileStat.size;
   broadcastChatState();
   broadcastChatNotificationState();
+  broadcastLootTrackerState();
 }
 
 async function syncLogPathAndDate(): Promise<void> {
@@ -538,6 +776,9 @@ function getOverlayLikeWindows(): BrowserWindow[] {
   }
   if (surveyorWindow && !surveyorWindow.isDestroyed()) {
     windows.push(surveyorWindow);
+  }
+  if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
+    windows.push(lootTrackerWindow);
   }
   return windows;
 }
@@ -707,6 +948,7 @@ function createOverlayWindow(): BrowserWindow {
       overlayWindows.size === 0 &&
       !statsWindow &&
       !surveyorWindow &&
+      !lootTrackerWindow &&
       mouseTrackingInterval
     ) {
       clearInterval(mouseTrackingInterval);
@@ -921,6 +1163,66 @@ function createSurveyorWindow(): BrowserWindow {
   return window;
 }
 
+function createLootTrackerWindow(): BrowserWindow {
+  if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
+    lootTrackerWindow.focus();
+    return lootTrackerWindow;
+  }
+
+  const window = new BrowserWindow({
+    width: 420,
+    height: 420,
+    minWidth: 340,
+    minHeight: 280,
+    resizable: true,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: true,
+    autoHideMenuBar: true,
+    alwaysOnTop: true,
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'linux' ? { icon } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  });
+
+  window.setTitle('Loot Tracker - pg-tools');
+  applyOverlayTraits(window);
+  syncMousePassthrough(window);
+
+  window.on('ready-to-show', () => {
+    applyOverlayTraits(window);
+    window.show();
+  });
+  window.on('focus', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('restore', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('closed', () => {
+    lootTrackerWindow = null;
+    if (overlayWindows.size === 0 && !statsWindow && !surveyorWindow && mouseTrackingInterval) {
+      clearInterval(mouseTrackingInterval);
+      mouseTrackingInterval = null;
+    }
+  });
+
+  window.webContents.on('did-finish-load', () => {
+    window.webContents.send('overlay:lock-state-changed', overlayLocked);
+    window.webContents.send('overlay:opacity-changed', overlayOpacity);
+    window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    window.webContents.send('loot-tracker:state-changed', getLootTrackerState());
+  });
+
+  loadRenderer(window, 'loot-tracker');
+  lootTrackerWindow = window;
+  return window;
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.pgtools');
   await loadAppSettings();
@@ -967,6 +1269,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('window:open-surveyor', () => {
     createSurveyorWindow();
+  });
+
+  ipcMain.handle('window:open-loot-tracker', () => {
+    createLootTrackerWindow();
   });
 
   ipcMain.handle('window:open-chat', () => {
@@ -1021,6 +1327,10 @@ app.whenReady().then(async () => {
       surveyorWindow.setOpacity(nextOpacity);
       surveyorWindow.webContents.send('overlay:opacity-changed', nextOpacity);
     }
+    if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
+      lootTrackerWindow.setOpacity(nextOpacity);
+      lootTrackerWindow.webContents.send('overlay:opacity-changed', nextOpacity);
+    }
     settingsWindow?.webContents.send('overlay:opacity-changed', nextOpacity);
     void persistAppSettings();
     return overlayOpacity;
@@ -1047,6 +1357,9 @@ app.whenReady().then(async () => {
     if (surveyorWindow && !surveyorWindow.isDestroyed()) {
       surveyorWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     }
+    if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
+      lootTrackerWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    }
     void persistAppSettings();
     return overlayFontSettings;
   });
@@ -1071,6 +1384,40 @@ app.whenReady().then(async () => {
     return getChatNotificationState();
   });
   ipcMain.handle('stats:get-state', () => getStatsState());
+  ipcMain.handle('loot-tracker:get-state', () => getLootTrackerState());
+  ipcMain.handle('loot-tracker:set-objectives', (_event, itemNames: unknown) => {
+    const nextObjectives = sanitizeLootTrackerObjectives(itemNames);
+    const previousCounts = new Map(lootCountsByItem);
+    lootTrackerObjectives = nextObjectives;
+    lootCountsByItem.clear();
+    for (const objective of lootTrackerObjectives) {
+      lootCountsByItem.set(objective.itemName, previousCounts.get(objective.itemName) ?? 0);
+    }
+    broadcastLootTrackerState();
+    void persistAppSettings();
+    return getLootTrackerState();
+  });
+  ipcMain.handle('loot-tracker:set-objective-count', (_event, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') {
+      return getLootTrackerState();
+    }
+
+    const maybeItemName = (payload as { itemName?: unknown }).itemName;
+    const maybeCount = (payload as { count?: unknown }).count;
+    if (typeof maybeItemName !== 'string') {
+      return getLootTrackerState();
+    }
+
+    const itemName = maybeItemName.trim();
+    if (!itemName || !lootTrackerObjectives.some((objective) => objective.itemName === itemName)) {
+      return getLootTrackerState();
+    }
+
+    lootCountsByItem.set(itemName, sanitizeLootCount(maybeCount));
+    broadcastLootTrackerState();
+    void persistAppSettings();
+    return getLootTrackerState();
+  });
 
   createOverlayWindow();
   void runLogMonitorTick();

@@ -169,7 +169,6 @@ export default function StatsView(): React.JSX.Element {
           } as React.CSSProperties
         }
       >
-        <p className="stats-header">Stats</p>
         <div className="stats-log">
           <p className="stats-title">XP Gains</p>
           {statsState.xpGains.length === 0 && <p className="stats-empty">No XP gains yet.</p>}
@@ -186,6 +185,7 @@ export default function StatsView(): React.JSX.Element {
             </p>
           ))}
         </div>
+        <p className="status-line file-path">If you need help with this app, talk to Lamplighter</p>
       </div>
       <div
         className="resize-handle resize-right no-drag"

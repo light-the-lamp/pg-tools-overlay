@@ -33,6 +33,21 @@ interface ChatNotificationState {
   matchCount: number
 }
 
+interface LootObjective {
+  itemName: string
+  count: number
+  target: number
+}
+
+interface LootObjectiveConfig {
+  itemName: string
+  target: number
+}
+
+interface LootTrackerState {
+  objectives: LootObjective[]
+}
+
 interface OverlayAPI {
   minimizeWindow: () => Promise<void>
   closeWindow: () => Promise<void>
@@ -59,12 +74,17 @@ interface OverlayAPI {
   getChatNotificationState: () => Promise<ChatNotificationState>
   setChatNotificationKeywords: (keywords: string[]) => Promise<ChatNotificationState>
   markChatNotificationsSeen: () => Promise<ChatNotificationState>
+  openLootTrackerWindow: () => Promise<void>
+  getLootTrackerState: () => Promise<LootTrackerState>
+  setLootTrackerObjectives: (objectives: LootObjectiveConfig[]) => Promise<LootTrackerState>
+  setLootTrackerObjectiveCount: (itemName: string, count: number) => Promise<LootTrackerState>
   onOverlayLockStateChanged: (listener: (locked: boolean) => void) => () => void
   onOverlayOpacityChanged: (listener: (opacity: number) => void) => () => void
   onFontSettingsChanged: (listener: (settings: FontSettings) => void) => () => void
   onStatsStateChanged: (listener: (state: StatsState) => void) => () => void
   onChatStateChanged: (listener: (state: ChatState) => void) => () => void
   onChatNotificationStateChanged: (listener: (state: ChatNotificationState) => void) => () => void
+  onLootTrackerStateChanged: (listener: (state: LootTrackerState) => void) => () => void
 }
 
 declare global {

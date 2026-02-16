@@ -28,6 +28,21 @@ interface ChatNotificationState {
   matchCount: number;
 }
 
+interface LootObjective {
+  itemName: string;
+  count: number;
+  target: number;
+}
+
+interface LootObjectiveConfig {
+  itemName: string;
+  target: number;
+}
+
+interface LootTrackerState {
+  objectives: LootObjective[];
+}
+
 const api = {
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
   closeWindow: (): Promise<void> => ipcRenderer.invoke('window:close'),
@@ -54,6 +69,9 @@ const api = {
   },
   openSurveyorWindow: (): Promise<void> => {
     return ipcRenderer.invoke('window:open-surveyor');
+  },
+  openLootTrackerWindow: (): Promise<void> => {
+    return ipcRenderer.invoke('window:open-loot-tracker');
   },
   openChatWindow: (): Promise<void> => {
     return ipcRenderer.invoke('window:open-chat');
@@ -87,6 +105,15 @@ const api = {
   },
   markChatNotificationsSeen: (): Promise<ChatNotificationState> => {
     return ipcRenderer.invoke('chat:mark-notifications-seen');
+  },
+  getLootTrackerState: (): Promise<LootTrackerState> => {
+    return ipcRenderer.invoke('loot-tracker:get-state');
+  },
+  setLootTrackerObjectives: (objectives: LootObjectiveConfig[]): Promise<LootTrackerState> => {
+    return ipcRenderer.invoke('loot-tracker:set-objectives', objectives);
+  },
+  setLootTrackerObjectiveCount: (itemName: string, count: number): Promise<LootTrackerState> => {
+    return ipcRenderer.invoke('loot-tracker:set-objective-count', { itemName, count });
   },
   onOverlayLockStateChanged: (listener: (locked: boolean) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, locked: boolean): void => listener(locked);
@@ -139,6 +166,14 @@ const api = {
     ipcRenderer.on('chat:notification-state-changed', handler);
     return (): void => {
       ipcRenderer.removeListener('chat:notification-state-changed', handler);
+    };
+  },
+  onLootTrackerStateChanged: (listener: (state: LootTrackerState) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: LootTrackerState): void =>
+      listener(state);
+    ipcRenderer.on('loot-tracker:state-changed', handler);
+    return (): void => {
+      ipcRenderer.removeListener('loot-tracker:state-changed', handler);
     };
   }
 };

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import ChatOverlay from './components/ChatOverlay';
 import MenuView from './components/MenuView';
+import LootTrackerView from './components/LootTrackerView';
 import SettingsView from './components/SettingsView';
 import StatsView from './components/StatsView';
 import SurveyorView from './components/SurveyorView';
@@ -38,6 +39,9 @@ function App(): React.JSX.Element {
   }
   if (window.location.hash === '#surveyor') {
     return <SurveyorView />;
+  }
+  if (window.location.hash === '#loot-tracker') {
+    return <LootTrackerView />;
   }
   return <ChatOverlay />;
 }

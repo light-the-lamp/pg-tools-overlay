@@ -1,0 +1,203 @@
+.loot-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 150px;
+  padding: 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.loot-search-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.loot-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(12, 18, 30, 0.85);
+  color: #eef3ff;
+}
+
+.loot-target-input {
+  width: 70px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(12, 18, 30, 0.85);
+  color: #ffd77f;
+  font-weight: 700;
+}
+
+.loot-add-btn {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: rgba(50, 102, 74, 0.86);
+  color: #eef3ff;
+  cursor: pointer;
+}
+
+.loot-add-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.loot-select-all-btn {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: rgba(23, 32, 50, 0.92);
+  color: #eef3ff;
+  cursor: pointer;
+}
+
+.loot-select-all-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.loot-suggestions {
+  display: grid;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 11, 20, 0.5);
+  padding: 4px;
+}
+
+.loot-suggestion-item {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.07);
+  color: #eef3ff;
+  cursor: pointer;
+}
+
+.loot-suggestion-item:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.loot-objectives {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.loot-remove-selected-btn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: rgba(214, 68, 68, 0.24);
+  color: #eef3ff;
+  cursor: pointer;
+  width: fit-content;
+  align-self: center;
+}
+
+.loot-remove-selected-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.loot-objective-row {
+  display: grid;
+  gap: 6px;
+  height: 72px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 11, 20, 0.5);
+  padding: 8px;
+  overflow: hidden;
+}
+
+.loot-objective-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loot-select-toggle {
+  display: inline-flex;
+  align-items: center;
+}
+
+.loot-objective-name {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: 12px;
+  color: #eef3ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.loot-objective-count-input {
+  width: 64px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: rgba(12, 18, 30, 0.85);
+  color: #ffd77f;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.loot-progress-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.loot-progress-separator {
+  color: #ffd77f;
+  font-weight: 700;
+}
+
+.loot-objective-target-input {
+  width: 64px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: rgba(12, 18, 30, 0.85);
+  color: #ffd77f;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.loot-remove-btn {
+  justify-self: end;
+  align-self: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: rgba(214, 68, 68, 0.24);
+  color: #eef3ff;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.loot-remove-btn:hover {
+  background: rgba(214, 68, 68, 0.58);
+}
+
+.loot-empty {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(236, 241, 255, 0.72);
+}

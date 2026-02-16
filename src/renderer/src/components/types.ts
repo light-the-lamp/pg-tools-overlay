@@ -30,3 +30,18 @@ export interface ChatNotificationState {
   keywords: string[];
   matchCount: number;
 }
+
+export interface LootObjective {
+  itemName: string;
+  count: number;
+  target: number;
+}
+
+export interface LootObjectiveConfig {
+  itemName: string;
+  target: number;
+}
+
+export interface LootTrackerState {
+  objectives: LootObjective[];
+}
