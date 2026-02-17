@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BiSolidRightArrow } from 'react-icons/bi';
+import type { SurveyorGridSettings } from './types';
 
 type ResizeDirection = 'right' | 'bottom' | 'corner';
 type PinType = 'pin-p' | 'pin-t';
@@ -41,6 +42,12 @@ export default function SurveyorView({
     clues: [],
     markers: []
   });
+  const [gridSettings, setGridSettings] = useState<SurveyorGridSettings>({
+    thickness: 2,
+    color: '#f4da46',
+    gap: 10,
+    columns: 10
+  });
 
   const startResize = useCallback((direction: ResizeDirection, startEvent: React.MouseEvent) => {
     startEvent.preventDefault();
@@ -75,6 +82,7 @@ export default function SurveyorView({
   useEffect(() => {
     void window.api.getOverlayLocked().then(setIsLocked);
     void window.api.getSurveyorState().then(setSurveyorState);
+    void window.api.getSurveyorGridSettings().then(setGridSettings);
 
     const unsubscribeLock = window.api.onOverlayLockStateChanged((locked) => {
       setIsLocked(locked);
@@ -82,12 +90,27 @@ export default function SurveyorView({
     const unsubscribeSurveyor = window.api.onSurveyorStateChanged((state) => {
       setSurveyorState(state);
     });
+    const unsubscribeGridSettings = window.api.onSurveyorGridSettingsChanged((settings) => {
+      setGridSettings(settings);
+    });
 
     return () => {
       unsubscribeLock();
       unsubscribeSurveyor();
+      unsubscribeGridSettings();
     };
   }, []);
+
+  const inventoryAnchorGridStyle = useMemo(
+    () =>
+      ({
+        '--inventory-grid-columns': String(gridSettings.columns),
+        '--inventory-grid-gap': `${gridSettings.gap}px`,
+        '--inventory-square-border-width': `${gridSettings.thickness}px`,
+        '--inventory-square-color': gridSettings.color
+      }) as React.CSSProperties,
+    [gridSettings.columns, gridSettings.color, gridSettings.gap, gridSettings.thickness]
+  );
 
   const playerPin = useMemo(
     () => surveyorState.markers.find((marker) => marker.type === 'pin-p') ?? null,
@@ -421,7 +444,11 @@ export default function SurveyorView({
           title={supportsPins ? 'Click to place selected pin' : ''}
         >
           {!supportsPins ? (
-            <div className="inventory-anchor-grid" aria-hidden="true">
+            <div
+              className="inventory-anchor-grid"
+              aria-hidden="true"
+              style={inventoryAnchorGridStyle}
+            >
               {inventoryRenderItems.map((item) =>
                 item.kind === 'placeholder' ? (
                   <span key={item.key} className="inventory-anchor-placeholder" />

@@ -23,9 +23,17 @@ interface FontSettings {
   color: string;
 }
 
+interface SurveyorGridSettings {
+  thickness: number;
+  color: string;
+  gap: number;
+  columns: number;
+}
+
 interface AppSettings {
   overlayOpacity: number;
   fontSettings: FontSettings;
+  surveyorGridSettings: SurveyorGridSettings;
   chatNotificationKeywords: string[];
   lootTrackerObjectives: LootObjectiveConfig[];
   lootTrackerCounts: Record<string, number>;
@@ -101,6 +109,12 @@ let lootTrackerWindow: BrowserWindow | null = null;
 let combatSkillWatcherWindow: BrowserWindow | null = null;
 let overlayOpacity = 1;
 let overlayFontSettings: FontSettings = { size: 12, color: '#eef3ff' };
+let surveyorGridSettings: SurveyorGridSettings = {
+  thickness: 2,
+  color: '#f4da46',
+  gap: 10,
+  columns: 10
+};
 let settingsPath = '';
 let settingsWriteInFlight: Promise<void> | null = null;
 const xpBySkill = new Map<string, number>();
@@ -275,6 +289,36 @@ function sanitizeCombatSkillWatcherSkills(skills: unknown): string[] {
   }
 
   return normalized;
+}
+
+function sanitizeHexColor(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed : fallback;
+}
+
+function sanitizeSurveyorGridSettings(settings: unknown): SurveyorGridSettings {
+  const source =
+    settings && typeof settings === 'object'
+      ? (settings as Partial<SurveyorGridSettings>)
+      : ({} as Partial<SurveyorGridSettings>);
+  const thicknessValue = Math.floor(Number(source.thickness));
+  const gapValue = Math.floor(Number(source.gap));
+  const columnsValue = Math.floor(Number(source.columns));
+
+  return {
+    thickness: Number.isFinite(thicknessValue)
+      ? Math.max(1, Math.min(8, thicknessValue))
+      : surveyorGridSettings.thickness,
+    color: sanitizeHexColor(source.color, surveyorGridSettings.color),
+    gap: Number.isFinite(gapValue) ? Math.max(0, Math.min(24, gapValue)) : surveyorGridSettings.gap,
+    columns: Number.isFinite(columnsValue)
+      ? Math.max(1, Math.min(20, columnsValue))
+      : surveyorGridSettings.columns
+  };
 }
 
 function sanitizeLootTrackerCounts(
@@ -648,6 +692,16 @@ function broadcastFontSettings(): void {
   settingsWindow?.webContents.send('overlay:font-settings-changed', overlayFontSettings);
 }
 
+function broadcastSurveyorGridSettings(): void {
+  if (surveyorWindow && !surveyorWindow.isDestroyed()) {
+    surveyorWindow.webContents.send('surveyor:grid-settings-changed', surveyorGridSettings);
+  }
+  if (surveyorWindow2 && !surveyorWindow2.isDestroyed()) {
+    surveyorWindow2.webContents.send('surveyor:grid-settings-changed', surveyorGridSettings);
+  }
+  settingsWindow?.webContents.send('surveyor:grid-settings-changed', surveyorGridSettings);
+}
+
 function getStatsState(): StatsState {
   const xpGains = Array.from(xpBySkill.entries())
     .map(([skill, value]) => ({ skill, value }))
@@ -677,6 +731,7 @@ function getSettingsPayload(): AppSettings {
   return {
     overlayOpacity,
     fontSettings: overlayFontSettings,
+    surveyorGridSettings,
     chatNotificationKeywords,
     lootTrackerObjectives,
     lootTrackerCounts: getPersistableLootTrackerCounts(),
@@ -702,6 +757,7 @@ async function loadAppSettings(): Promise<void> {
       typeof nextFont?.color === 'string' && nextFont.color.trim()
         ? nextFont.color.trim()
         : overlayFontSettings.color;
+    const nextSurveyorGridSettings = sanitizeSurveyorGridSettings(parsed.surveyorGridSettings);
     const nextNotificationKeywords = sanitizeNotificationKeywords(parsed.chatNotificationKeywords);
     const nextLootObjectives = sanitizeLootTrackerObjectives(parsed.lootTrackerObjectives);
     const nextLootCounts = sanitizeLootTrackerCounts(parsed.lootTrackerCounts, nextLootObjectives);
@@ -709,6 +765,7 @@ async function loadAppSettings(): Promise<void> {
 
     overlayOpacity = nextOpacity;
     overlayFontSettings = { size: nextFontSize, color: nextFontColor };
+    surveyorGridSettings = nextSurveyorGridSettings;
     chatNotificationKeywords = nextNotificationKeywords;
     lootTrackerObjectives = nextLootObjectives;
     combatSkillWatcherSkills = nextCombatSkills;
@@ -1814,6 +1871,14 @@ app.whenReady().then(async () => {
     }
     void persistAppSettings();
     return overlayFontSettings;
+  });
+
+  ipcMain.handle('surveyor:get-grid-settings', () => surveyorGridSettings);
+  ipcMain.handle('surveyor:set-grid-settings', (_event, settings: SurveyorGridSettings) => {
+    surveyorGridSettings = sanitizeSurveyorGridSettings(settings);
+    broadcastSurveyorGridSettings();
+    void persistAppSettings();
+    return surveyorGridSettings;
   });
 
   ipcMain.handle('surveyor:get-state', () => getSurveyorState());

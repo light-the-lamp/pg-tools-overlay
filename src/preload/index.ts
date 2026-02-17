@@ -13,6 +13,13 @@ interface FontSettings {
   color: string;
 }
 
+interface SurveyorGridSettings {
+  thickness: number;
+  color: string;
+  gap: number;
+  columns: number;
+}
+
 interface StatsEntry {
   skill: string;
   value: number;
@@ -160,6 +167,12 @@ const api = {
   getSurveyorState: (): Promise<SurveyorState> => {
     return ipcRenderer.invoke('surveyor:get-state');
   },
+  getSurveyorGridSettings: (): Promise<SurveyorGridSettings> => {
+    return ipcRenderer.invoke('surveyor:get-grid-settings');
+  },
+  setSurveyorGridSettings: (settings: SurveyorGridSettings): Promise<SurveyorGridSettings> => {
+    return ipcRenderer.invoke('surveyor:set-grid-settings', settings);
+  },
   addSurveyorMarker: (
     type: SurveyMarkerType,
     xPercent: number,
@@ -253,6 +266,16 @@ const api = {
     ipcRenderer.on('surveyor:state-changed', handler);
     return (): void => {
       ipcRenderer.removeListener('surveyor:state-changed', handler);
+    };
+  },
+  onSurveyorGridSettingsChanged: (
+    listener: (settings: SurveyorGridSettings) => void
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, settings: SurveyorGridSettings): void =>
+      listener(settings);
+    ipcRenderer.on('surveyor:grid-settings-changed', handler);
+    return (): void => {
+      ipcRenderer.removeListener('surveyor:grid-settings-changed', handler);
     };
   }
 };

@@ -118,9 +118,9 @@
   top: 8px;
   left: 8px;
   display: grid;
-  grid-template-columns: repeat(10, 50px);
+  grid-template-columns: repeat(var(--inventory-grid-columns, 10), 50px);
   grid-auto-rows: 50px;
-  gap: 10px;
+  gap: var(--inventory-grid-gap, 10px);
   align-items: start;
 }
 
@@ -138,7 +138,7 @@
   width: 50px;
   height: 50px;
   background: transparent;
-  border: 2px solid #f4da46;
+  border: var(--inventory-square-border-width, 2px) solid var(--inventory-square-color, #f4da46);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
@@ -150,7 +150,7 @@
 }
 
 .inventory-anchor-number {
-  color: #f4da46;
+  color: var(--inventory-square-color, #f4da46);
   font-size: 14px;
   font-weight: 700;
   line-height: 1;

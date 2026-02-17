@@ -18,6 +18,13 @@ interface FontSettings {
   color: string
 }
 
+interface SurveyorGridSettings {
+  thickness: number
+  color: string
+  gap: number
+  columns: number
+}
+
 interface StatsEntry {
   skill: string
   value: number
@@ -113,6 +120,8 @@ interface OverlayAPI {
   getCombatSkillWatcherState: () => Promise<CombatSkillWatcherState>
   setCombatSkillWatcherSkills: (skills: string[]) => Promise<CombatSkillWatcherState>
   getSurveyorState: () => Promise<SurveyorState>
+  getSurveyorGridSettings: () => Promise<SurveyorGridSettings>
+  setSurveyorGridSettings: (settings: SurveyorGridSettings) => Promise<SurveyorGridSettings>
   addSurveyorMarker: (
     type: SurveyMarkerType,
     xPercent: number,
@@ -130,6 +139,7 @@ interface OverlayAPI {
   onLootTrackerStateChanged: (listener: (state: LootTrackerState) => void) => () => void
   onCombatSkillWatcherStateChanged: (listener: (state: CombatSkillWatcherState) => void) => () => void
   onSurveyorStateChanged: (listener: (state: SurveyorState) => void) => () => void
+  onSurveyorGridSettingsChanged: (listener: (settings: SurveyorGridSettings) => void) => () => void
 }
 
 declare global {
