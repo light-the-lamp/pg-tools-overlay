@@ -1,6 +1,6 @@
 {
   "name": "pg-tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "An overlay application for Project: Gorgon",
   "main": "./out/main/index.js",
   "author": "Lamplighter",

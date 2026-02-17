@@ -10,7 +10,7 @@ export default function SettingsView(): React.JSX.Element {
     gap: 10,
     columns: 10
   });
-  const [chatNotificationState, setChatNotificationState] = useState<ChatNotificationState>({
+  const [, setChatNotificationState] = useState<ChatNotificationState>({
     keywords: [],
     matchCount: 0
   });
