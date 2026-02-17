@@ -23,9 +23,17 @@ interface FontSettings {
   color: string;
 }
 
+interface SurveyorGridSettings {
+  thickness: number;
+  color: string;
+  gap: number;
+  columns: number;
+}
+
 interface AppSettings {
   overlayOpacity: number;
   fontSettings: FontSettings;
+  surveyorGridSettings: SurveyorGridSettings;
   chatNotificationKeywords: string[];
   lootTrackerObjectives: LootObjectiveConfig[];
   lootTrackerCounts: Record<string, number>;
@@ -65,16 +73,48 @@ interface StatsState {
   xpGains: StatsEntry[];
   levelUps: StatsEntry[];
 }
+
+type SurveyDirectionX = 'east' | 'west';
+type SurveyDirectionY = 'north' | 'south';
+type SurveyMarkerType = 'pin-p' | 'pin-t';
+
+interface SurveyMarker {
+  id: number;
+  type: SurveyMarkerType;
+  xPercent: number;
+  yPercent: number;
+}
+
+interface SurveyClue {
+  id: number;
+  xMeters: number;
+  xDirection: SurveyDirectionX;
+  yMeters: number;
+  yDirection: SurveyDirectionY;
+  linkedTargetMarkerId: number | null;
+}
+
+interface SurveyorState {
+  started: boolean;
+  clues: SurveyClue[];
+  markers: SurveyMarker[];
+}
 const overlayWindows = new Set<BrowserWindow>();
 const menuWindows = new Map<BrowserWindow, BrowserWindow>();
 let settingsWindow: BrowserWindow | null = null;
 let statsWindow: BrowserWindow | null = null;
 let surveyorWindow: BrowserWindow | null = null;
+let surveyorWindow2: BrowserWindow | null = null;
 let lootTrackerWindow: BrowserWindow | null = null;
 let combatSkillWatcherWindow: BrowserWindow | null = null;
-let overlayLocked = false;
 let overlayOpacity = 1;
 let overlayFontSettings: FontSettings = { size: 12, color: '#eef3ff' };
+let surveyorGridSettings: SurveyorGridSettings = {
+  thickness: 2,
+  color: '#f4da46',
+  gap: 10,
+  columns: 10
+};
 let settingsPath = '';
 let settingsWriteInFlight: Promise<void> | null = null;
 const xpBySkill = new Map<string, number>();
@@ -88,6 +128,7 @@ const overlayResizeEdge = 14;
 const mouseTrackingIntervalMs = 80;
 let mouseTrackingInterval: NodeJS.Timeout | null = null;
 const ignoreMouseByWindow = new WeakMap<BrowserWindow, boolean>();
+const overlayLockedByWindow = new WeakMap<BrowserWindow, boolean>();
 
 const chatLines: ChatLine[] = [];
 const chatChannels = new Set<string>();
@@ -105,6 +146,11 @@ const ignoredNotificationChannels = new Set(['combat', 'emotes']);
 let lootTrackerObjectives: LootObjectiveConfig[] = [];
 const lootCountsByItem = new Map<string, number>();
 let combatSkillWatcherSkills: string[] = [];
+let surveyorStarted = false;
+let surveyMarkerId = 0;
+let surveyClueId = 0;
+const surveyMarkers: SurveyMarker[] = [];
+const surveyClues: SurveyClue[] = [];
 
 function getDateKey(date: Date): string {
   const yy = String(date.getFullYear()).slice(-2);
@@ -243,6 +289,36 @@ function sanitizeCombatSkillWatcherSkills(skills: unknown): string[] {
   }
 
   return normalized;
+}
+
+function sanitizeHexColor(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed : fallback;
+}
+
+function sanitizeSurveyorGridSettings(settings: unknown): SurveyorGridSettings {
+  const source =
+    settings && typeof settings === 'object'
+      ? (settings as Partial<SurveyorGridSettings>)
+      : ({} as Partial<SurveyorGridSettings>);
+  const thicknessValue = Math.floor(Number(source.thickness));
+  const gapValue = Math.floor(Number(source.gap));
+  const columnsValue = Math.floor(Number(source.columns));
+
+  return {
+    thickness: Number.isFinite(thicknessValue)
+      ? Math.max(1, Math.min(8, thicknessValue))
+      : surveyorGridSettings.thickness,
+    color: sanitizeHexColor(source.color, surveyorGridSettings.color),
+    gap: Number.isFinite(gapValue) ? Math.max(0, Math.min(24, gapValue)) : surveyorGridSettings.gap,
+    columns: Number.isFinite(columnsValue)
+      ? Math.max(1, Math.min(20, columnsValue))
+      : surveyorGridSettings.columns
+  };
 }
 
 function sanitizeLootTrackerCounts(
@@ -419,6 +495,99 @@ function trackLootForLine(text: string): boolean {
   return changed;
 }
 
+function getSurveyorState(): SurveyorState {
+  return {
+    started: surveyorStarted,
+    clues: surveyClues,
+    markers: surveyMarkers
+  };
+}
+
+function parseSurveyClueFromLine(text: string): Omit<SurveyClue, 'id' | 'linkedTargetMarkerId'> | null {
+  const message = getMatchableChatText(text);
+  const match = message.match(
+    /is\s+(\d+(?:\.\d+)?)\s*m\s*(east|west)\s+and\s+(\d+(?:\.\d+)?)\s*m\s*(north|south)/i
+  );
+  if (!match) {
+    return null;
+  }
+
+  const xMeters = Number(match[1]);
+  const xDirection = match[2].toLocaleLowerCase() as SurveyDirectionX;
+  const yMeters = Number(match[3]);
+  const yDirection = match[4].toLocaleLowerCase() as SurveyDirectionY;
+  if (!Number.isFinite(xMeters) || !Number.isFinite(yMeters)) {
+    return null;
+  }
+
+  return {
+    xMeters: Math.max(0, xMeters),
+    xDirection,
+    yMeters: Math.max(0, yMeters),
+    yDirection
+  };
+}
+
+function getNextUnlinkedSurveyClue(): SurveyClue | null {
+  return surveyClues.find((clue) => clue.linkedTargetMarkerId == null) ?? null;
+}
+
+function trackSurveyorForLine(text: string): boolean {
+  if (surveyorStarted) {
+    return false;
+  }
+
+  const parsedClue = parseSurveyClueFromLine(text);
+  if (!parsedClue) {
+    return false;
+  }
+
+  surveyClues.push({
+    id: ++surveyClueId,
+    xMeters: parsedClue.xMeters,
+    xDirection: parsedClue.xDirection,
+    yMeters: parsedClue.yMeters,
+    yDirection: parsedClue.yDirection,
+    linkedTargetMarkerId: null
+  });
+  return true;
+}
+
+function removeSurveyClueByLinkedMarker(markerId: number): boolean {
+  const index = surveyClues.findIndex((clue) => clue.linkedTargetMarkerId === markerId);
+  if (index < 0) {
+    return false;
+  }
+
+  surveyClues.splice(index, 1);
+  if (surveyClues.length === 0) {
+    surveyClueId = 0;
+    surveyorStarted = false;
+  }
+  return true;
+}
+
+function resetSurveyorState(): void {
+  surveyorStarted = false;
+  surveyMarkers.length = 0;
+  surveyClues.length = 0;
+  surveyClueId = 0;
+}
+
+function surveyorStateHasNoActiveData(): boolean {
+  return surveyMarkers.length === 0 && surveyClues.length === 0;
+}
+
+function broadcastSurveyorState(): void {
+  const state = getSurveyorState();
+  if (surveyorWindow && !surveyorWindow.isDestroyed()) {
+    surveyorWindow.webContents.send('surveyor:state-changed', state);
+  }
+  if (surveyorWindow2 && !surveyorWindow2.isDestroyed()) {
+    surveyorWindow2.webContents.send('surveyor:state-changed', state);
+  }
+}
+
 function parseChatLine(line: string): ChatLine {
   const normalized = stripLeadingDate(line);
   const channelMatch = normalized.match(/\[([^\]]+)\]/);
@@ -511,6 +680,9 @@ function broadcastFontSettings(): void {
   if (surveyorWindow && !surveyorWindow.isDestroyed()) {
     surveyorWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
   }
+  if (surveyorWindow2 && !surveyorWindow2.isDestroyed()) {
+    surveyorWindow2.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+  }
   if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
     lootTrackerWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
   }
@@ -518,6 +690,16 @@ function broadcastFontSettings(): void {
     combatSkillWatcherWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
   }
   settingsWindow?.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+}
+
+function broadcastSurveyorGridSettings(): void {
+  if (surveyorWindow && !surveyorWindow.isDestroyed()) {
+    surveyorWindow.webContents.send('surveyor:grid-settings-changed', surveyorGridSettings);
+  }
+  if (surveyorWindow2 && !surveyorWindow2.isDestroyed()) {
+    surveyorWindow2.webContents.send('surveyor:grid-settings-changed', surveyorGridSettings);
+  }
+  settingsWindow?.webContents.send('surveyor:grid-settings-changed', surveyorGridSettings);
 }
 
 function getStatsState(): StatsState {
@@ -549,6 +731,7 @@ function getSettingsPayload(): AppSettings {
   return {
     overlayOpacity,
     fontSettings: overlayFontSettings,
+    surveyorGridSettings,
     chatNotificationKeywords,
     lootTrackerObjectives,
     lootTrackerCounts: getPersistableLootTrackerCounts(),
@@ -574,6 +757,7 @@ async function loadAppSettings(): Promise<void> {
       typeof nextFont?.color === 'string' && nextFont.color.trim()
         ? nextFont.color.trim()
         : overlayFontSettings.color;
+    const nextSurveyorGridSettings = sanitizeSurveyorGridSettings(parsed.surveyorGridSettings);
     const nextNotificationKeywords = sanitizeNotificationKeywords(parsed.chatNotificationKeywords);
     const nextLootObjectives = sanitizeLootTrackerObjectives(parsed.lootTrackerObjectives);
     const nextLootCounts = sanitizeLootTrackerCounts(parsed.lootTrackerCounts, nextLootObjectives);
@@ -581,6 +765,7 @@ async function loadAppSettings(): Promise<void> {
 
     overlayOpacity = nextOpacity;
     overlayFontSettings = { size: nextFontSize, color: nextFontColor };
+    surveyorGridSettings = nextSurveyorGridSettings;
     chatNotificationKeywords = nextNotificationKeywords;
     lootTrackerObjectives = nextLootObjectives;
     combatSkillWatcherSkills = nextCombatSkills;
@@ -660,6 +845,7 @@ function ingestChatLines(lines: string[]): boolean {
   let statsChanged = false;
   let notificationChanged = false;
   let lootChanged = false;
+  let surveyChanged = false;
 
   for (const raw of lines) {
     const line = raw.trim();
@@ -668,6 +854,7 @@ function ingestChatLines(lines: string[]): boolean {
     const parsed = parseChatLine(line);
     statsChanged = trackStatsForLine(parsed.text) || statsChanged;
     lootChanged = trackLootForLine(parsed.text) || lootChanged;
+    surveyChanged = trackSurveyorForLine(parsed.text) || surveyChanged;
     if (parsed.channel) {
       chatChannels.add(parsed.channel);
     }
@@ -693,8 +880,11 @@ function ingestChatLines(lines: string[]): boolean {
     broadcastLootTrackerState();
     void persistAppSettings();
   }
+  if (surveyChanged) {
+    broadcastSurveyorState();
+  }
 
-  return changed || statsChanged || notificationChanged || lootChanged;
+  return changed || statsChanged || notificationChanged || lootChanged || surveyChanged;
 }
 
 function recomputeNotificationMatches(): void {
@@ -825,8 +1015,34 @@ function shouldAllowMouse(window: BrowserWindow): boolean {
   return withinTopBar || withinResizeEdge;
 }
 
+function isOverlayWindowLocked(window: BrowserWindow): boolean {
+  return overlayLockedByWindow.get(window) ?? false;
+}
+
+function hasAnyLockedOverlayWindows(): boolean {
+  return getOverlayLikeWindows().some((window) => isOverlayWindowLocked(window));
+}
+
+function refreshMouseTrackingInterval(): void {
+  if (hasAnyLockedOverlayWindows()) {
+    if (!mouseTrackingInterval) {
+      mouseTrackingInterval = setInterval(() => {
+        for (const overlayWindow of getOverlayLikeWindows()) {
+          syncMousePassthrough(overlayWindow);
+        }
+      }, mouseTrackingIntervalMs);
+    }
+    return;
+  }
+
+  if (mouseTrackingInterval) {
+    clearInterval(mouseTrackingInterval);
+    mouseTrackingInterval = null;
+  }
+}
+
 function syncMousePassthrough(window: BrowserWindow): void {
-  if (!overlayLocked) {
+  if (!isOverlayWindowLocked(window)) {
     setIgnoreMouse(window, false);
     return;
   }
@@ -843,6 +1059,9 @@ function getOverlayLikeWindows(): BrowserWindow[] {
   if (surveyorWindow && !surveyorWindow.isDestroyed()) {
     windows.push(surveyorWindow);
   }
+  if (surveyorWindow2 && !surveyorWindow2.isDestroyed()) {
+    windows.push(surveyorWindow2);
+  }
   if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
     windows.push(lootTrackerWindow);
   }
@@ -852,25 +1071,11 @@ function getOverlayLikeWindows(): BrowserWindow[] {
   return windows;
 }
 
-function applyOverlayLock(locked: boolean): void {
-  overlayLocked = locked;
-  for (const overlayWindow of getOverlayLikeWindows()) {
-    syncMousePassthrough(overlayWindow);
-    overlayWindow.webContents.send('overlay:lock-state-changed', overlayLocked);
-  }
-
-  if (overlayLocked) {
-    if (!mouseTrackingInterval) {
-      mouseTrackingInterval = setInterval(() => {
-        for (const overlayWindow of getOverlayLikeWindows()) {
-          syncMousePassthrough(overlayWindow);
-        }
-      }, mouseTrackingIntervalMs);
-    }
-  } else if (mouseTrackingInterval) {
-    clearInterval(mouseTrackingInterval);
-    mouseTrackingInterval = null;
-  }
+function applyOverlayLock(window: BrowserWindow, locked: boolean): void {
+  overlayLockedByWindow.set(window, locked);
+  syncMousePassthrough(window);
+  window.webContents.send('overlay:lock-state-changed', locked);
+  refreshMouseTrackingInterval();
 }
 
 function positionMenuWindow(overlay: BrowserWindow, menu: BrowserWindow): void {
@@ -883,6 +1088,40 @@ function positionMenuWindow(overlay: BrowserWindow, menu: BrowserWindow): void {
     y: nextY,
     width: menuWindowSize.width,
     height: menuWindowSize.height
+  });
+}
+
+function positionSurveyorPair(primary: BrowserWindow, secondary: BrowserWindow): void {
+  if (primary.isDestroyed() || secondary.isDestroyed()) return;
+
+  const gap = 12;
+  const primaryBounds = primary.getBounds();
+  const secondaryBounds = secondary.getBounds();
+  const cursorPoint = screen.getCursorScreenPoint();
+  const workArea = screen.getDisplayNearestPoint(cursorPoint).workArea;
+  const totalWidth = primaryBounds.width + gap + secondaryBounds.width;
+  const maxHeight = Math.max(primaryBounds.height, secondaryBounds.height);
+  const maxStartX = workArea.x + Math.max(0, workArea.width - totalWidth);
+  const maxStartY = workArea.y + Math.max(0, workArea.height - maxHeight);
+  const startX = Math.min(
+    Math.max(workArea.x + Math.floor((workArea.width - totalWidth) / 2), workArea.x),
+    maxStartX
+  );
+  const startY = Math.min(
+    Math.max(workArea.y + Math.floor((workArea.height - maxHeight) / 2), workArea.y),
+    maxStartY
+  );
+
+  primary.setBounds({
+    ...primaryBounds,
+    x: startX,
+    y: startY
+  });
+
+  secondary.setBounds({
+    ...secondaryBounds,
+    x: startX + primaryBounds.width + gap,
+    y: startY
   });
 }
 
@@ -999,7 +1238,7 @@ function createOverlayWindow(): BrowserWindow {
   topBarInteractiveByWindow.set(mainWindow, false);
   syncMousePassthrough(mainWindow);
   mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow.webContents.send('overlay:lock-state-changed', overlayLocked);
+    mainWindow.webContents.send('overlay:lock-state-changed', isOverlayWindowLocked(mainWindow));
     mainWindow.webContents.send('overlay:opacity-changed', overlayOpacity);
     mainWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     mainWindow.webContents.send('stats:state-changed', getStatsState());
@@ -1007,6 +1246,8 @@ function createOverlayWindow(): BrowserWindow {
     mainWindow.webContents.send('chat:notification-state-changed', getChatNotificationState());
   });
   mainWindow.on('closed', () => {
+    overlayLockedByWindow.set(mainWindow, false);
+    refreshMouseTrackingInterval();
     const menuWindow = menuWindows.get(mainWindow);
     if (menuWindow && !menuWindow.isDestroyed()) {
       menuWindow.close();
@@ -1017,6 +1258,7 @@ function createOverlayWindow(): BrowserWindow {
       overlayWindows.size === 0 &&
       !statsWindow &&
       !surveyorWindow &&
+      !surveyorWindow2 &&
       !lootTrackerWindow &&
       !combatSkillWatcherWindow &&
       mouseTrackingInterval
@@ -1156,14 +1398,23 @@ function createStatsWindow(): BrowserWindow {
   });
   window.on('closed', () => {
     statsWindow = null;
-    if (overlayWindows.size === 0 && mouseTrackingInterval) {
+    overlayLockedByWindow.set(window, false);
+    refreshMouseTrackingInterval();
+    if (
+      overlayWindows.size === 0 &&
+      !surveyorWindow &&
+      !surveyorWindow2 &&
+      !lootTrackerWindow &&
+      !combatSkillWatcherWindow &&
+      mouseTrackingInterval
+    ) {
       clearInterval(mouseTrackingInterval);
       mouseTrackingInterval = null;
     }
   });
 
   window.webContents.on('did-finish-load', () => {
-    window.webContents.send('overlay:lock-state-changed', overlayLocked);
+    window.webContents.send('overlay:lock-state-changed', isOverlayWindowLocked(window));
     window.webContents.send('overlay:opacity-changed', overlayOpacity);
     window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     window.webContents.send('stats:state-changed', getStatsState());
@@ -1200,7 +1451,7 @@ function createSurveyorWindow(): BrowserWindow {
     }
   });
 
-  window.setTitle('Surveyor - pg-tools');
+  window.setTitle('Surveyor -> Map - pg-tools');
   applyOverlayTraits(window);
   syncMousePassthrough(window);
 
@@ -1216,20 +1467,100 @@ function createSurveyorWindow(): BrowserWindow {
   });
   window.on('closed', () => {
     surveyorWindow = null;
-    if (overlayWindows.size === 0 && !statsWindow && mouseTrackingInterval) {
+    if (surveyorWindow2 && !surveyorWindow2.isDestroyed()) {
+      surveyorWindow2.close();
+    }
+    overlayLockedByWindow.set(window, false);
+    refreshMouseTrackingInterval();
+    if (
+      overlayWindows.size === 0 &&
+      !statsWindow &&
+      !surveyorWindow2 &&
+      !lootTrackerWindow &&
+      !combatSkillWatcherWindow &&
+      mouseTrackingInterval
+    ) {
       clearInterval(mouseTrackingInterval);
       mouseTrackingInterval = null;
     }
   });
 
   window.webContents.on('did-finish-load', () => {
-    window.webContents.send('overlay:lock-state-changed', overlayLocked);
+    window.webContents.send('overlay:lock-state-changed', isOverlayWindowLocked(window));
     window.webContents.send('overlay:opacity-changed', overlayOpacity);
     window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
   });
 
   loadRenderer(window, 'surveyor');
   surveyorWindow = window;
+  return window;
+}
+
+function createSurveyorWindow2(): BrowserWindow {
+  if (surveyorWindow2 && !surveyorWindow2.isDestroyed()) {
+    surveyorWindow2.focus();
+    return surveyorWindow2;
+  }
+
+  const window = new BrowserWindow({
+    width: 420,
+    height: 320,
+    minWidth: 320,
+    minHeight: 220,
+    resizable: true,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: true,
+    autoHideMenuBar: true,
+    alwaysOnTop: true,
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'linux' ? { icon } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  });
+
+  window.setTitle('Surveyor Inventory - pg-tools');
+  applyOverlayTraits(window);
+  syncMousePassthrough(window);
+
+  window.on('ready-to-show', () => {
+    applyOverlayTraits(window);
+    window.show();
+  });
+  window.on('focus', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('restore', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('closed', () => {
+    surveyorWindow2 = null;
+    overlayLockedByWindow.set(window, false);
+    refreshMouseTrackingInterval();
+    if (
+      overlayWindows.size === 0 &&
+      !statsWindow &&
+      !surveyorWindow &&
+      !lootTrackerWindow &&
+      !combatSkillWatcherWindow &&
+      mouseTrackingInterval
+    ) {
+      clearInterval(mouseTrackingInterval);
+      mouseTrackingInterval = null;
+    }
+  });
+
+  window.webContents.on('did-finish-load', () => {
+    window.webContents.send('overlay:lock-state-changed', isOverlayWindowLocked(window));
+    window.webContents.send('overlay:opacity-changed', overlayOpacity);
+    window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+  });
+
+  loadRenderer(window, 'surveyor-2');
+  surveyorWindow2 = window;
   return window;
 }
 
@@ -1275,14 +1606,23 @@ function createLootTrackerWindow(): BrowserWindow {
   });
   window.on('closed', () => {
     lootTrackerWindow = null;
-    if (overlayWindows.size === 0 && !statsWindow && !surveyorWindow && mouseTrackingInterval) {
+    overlayLockedByWindow.set(window, false);
+    refreshMouseTrackingInterval();
+    if (
+      overlayWindows.size === 0 &&
+      !statsWindow &&
+      !surveyorWindow &&
+      !surveyorWindow2 &&
+      !combatSkillWatcherWindow &&
+      mouseTrackingInterval
+    ) {
       clearInterval(mouseTrackingInterval);
       mouseTrackingInterval = null;
     }
   });
 
   window.webContents.on('did-finish-load', () => {
-    window.webContents.send('overlay:lock-state-changed', overlayLocked);
+    window.webContents.send('overlay:lock-state-changed', isOverlayWindowLocked(window));
     window.webContents.send('overlay:opacity-changed', overlayOpacity);
     window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     window.webContents.send('loot-tracker:state-changed', getLootTrackerState());
@@ -1335,10 +1675,13 @@ function createCombatSkillWatcherWindow(): BrowserWindow {
   });
   window.on('closed', () => {
     combatSkillWatcherWindow = null;
+    overlayLockedByWindow.set(window, false);
+    refreshMouseTrackingInterval();
     if (
       overlayWindows.size === 0 &&
       !statsWindow &&
       !surveyorWindow &&
+      !surveyorWindow2 &&
       !lootTrackerWindow &&
       mouseTrackingInterval
     ) {
@@ -1348,7 +1691,7 @@ function createCombatSkillWatcherWindow(): BrowserWindow {
   });
 
   window.webContents.on('did-finish-load', () => {
-    window.webContents.send('overlay:lock-state-changed', overlayLocked);
+    window.webContents.send('overlay:lock-state-changed', isOverlayWindowLocked(window));
     window.webContents.send('overlay:opacity-changed', overlayOpacity);
     window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     window.webContents.send('stats:state-changed', getStatsState());
@@ -1405,7 +1748,13 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('window:open-surveyor', () => {
-    createSurveyorWindow();
+    const primary = createSurveyorWindow();
+    const secondary = createSurveyorWindow2();
+    positionSurveyorPair(primary, secondary);
+  });
+
+  ipcMain.handle('window:open-surveyor-2', () => {
+    createSurveyorWindow2();
   });
 
   ipcMain.handle('window:open-loot-tracker', () => {
@@ -1426,16 +1775,18 @@ app.whenReady().then(async () => {
     toggleMenuWindow(window);
   });
 
-  ipcMain.handle('overlay:get-locked', () => overlayLocked);
+  ipcMain.handle('overlay:get-locked', (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) return false;
+    return isOverlayWindowLocked(window);
+  });
 
   ipcMain.handle('overlay:set-locked', (event, locked: boolean) => {
     const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window) return overlayLocked;
-    for (const overlayWindow of overlayWindows) {
-      topBarInteractiveByWindow.set(overlayWindow, false);
-    }
-    applyOverlayLock(Boolean(locked));
-    return overlayLocked;
+    if (!window) return false;
+    topBarInteractiveByWindow.set(window, false);
+    applyOverlayLock(window, Boolean(locked));
+    return isOverlayWindowLocked(window);
   });
 
   ipcMain.handle('overlay:set-topbar-interactive', (event, interactive: boolean) => {
@@ -1467,6 +1818,10 @@ app.whenReady().then(async () => {
     if (surveyorWindow && !surveyorWindow.isDestroyed()) {
       surveyorWindow.setOpacity(nextOpacity);
       surveyorWindow.webContents.send('overlay:opacity-changed', nextOpacity);
+    }
+    if (surveyorWindow2 && !surveyorWindow2.isDestroyed()) {
+      surveyorWindow2.setOpacity(nextOpacity);
+      surveyorWindow2.webContents.send('overlay:opacity-changed', nextOpacity);
     }
     if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
       lootTrackerWindow.setOpacity(nextOpacity);
@@ -1502,6 +1857,9 @@ app.whenReady().then(async () => {
     if (surveyorWindow && !surveyorWindow.isDestroyed()) {
       surveyorWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     }
+    if (surveyorWindow2 && !surveyorWindow2.isDestroyed()) {
+      surveyorWindow2.webContents.send('overlay:font-settings-changed', overlayFontSettings);
+    }
     if (lootTrackerWindow && !lootTrackerWindow.isDestroyed()) {
       lootTrackerWindow.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     }
@@ -1513,6 +1871,114 @@ app.whenReady().then(async () => {
     }
     void persistAppSettings();
     return overlayFontSettings;
+  });
+
+  ipcMain.handle('surveyor:get-grid-settings', () => surveyorGridSettings);
+  ipcMain.handle('surveyor:set-grid-settings', (_event, settings: SurveyorGridSettings) => {
+    surveyorGridSettings = sanitizeSurveyorGridSettings(settings);
+    broadcastSurveyorGridSettings();
+    void persistAppSettings();
+    return surveyorGridSettings;
+  });
+
+  ipcMain.handle('surveyor:get-state', () => getSurveyorState());
+  ipcMain.handle(
+    'surveyor:add-marker',
+    (_event, payload: { type: SurveyMarkerType; xPercent: number; yPercent: number }) => {
+      if (surveyorStarted) {
+        return getSurveyorState();
+      }
+
+      if (!payload || (payload.type !== 'pin-p' && payload.type !== 'pin-t')) {
+        return getSurveyorState();
+      }
+
+      const xPercent = Math.max(0, Math.min(100, Number(payload.xPercent)));
+      const yPercent = Math.max(0, Math.min(100, Number(payload.yPercent)));
+      if (!Number.isFinite(xPercent) || !Number.isFinite(yPercent)) {
+        return getSurveyorState();
+      }
+
+      if (payload.type === 'pin-p') {
+        const existingPlayerMarker = surveyMarkers.find((marker) => marker.type === 'pin-p');
+        if (existingPlayerMarker) {
+          existingPlayerMarker.xPercent = xPercent;
+          existingPlayerMarker.yPercent = yPercent;
+        } else {
+          surveyMarkers.push({
+            id: ++surveyMarkerId,
+            type: 'pin-p',
+            xPercent,
+            yPercent
+          });
+        }
+      } else {
+        const markerId = ++surveyMarkerId;
+        surveyMarkers.push({
+          id: markerId,
+          type: 'pin-t',
+          xPercent,
+          yPercent
+        });
+
+        const nextUnlinkedClue = getNextUnlinkedSurveyClue();
+        if (nextUnlinkedClue) {
+          nextUnlinkedClue.linkedTargetMarkerId = markerId;
+        }
+      }
+
+      broadcastSurveyorState();
+      return getSurveyorState();
+    }
+  );
+  ipcMain.handle('surveyor:remove-marker', (_event, markerId: number) => {
+    const nextMarkerId = Number(markerId);
+    const markerIndex = surveyMarkers.findIndex((marker) => marker.id === nextMarkerId);
+    if (markerIndex < 0) {
+      return getSurveyorState();
+    }
+
+    const [removedMarker] = surveyMarkers.splice(markerIndex, 1);
+    if (removedMarker.type === 'pin-t') {
+      if (surveyorStarted) {
+        const playerMarker = surveyMarkers.find((marker) => marker.type === 'pin-p');
+        if (playerMarker) {
+          playerMarker.xPercent = removedMarker.xPercent;
+          playerMarker.yPercent = removedMarker.yPercent;
+        } else {
+          surveyMarkers.push({
+            id: ++surveyMarkerId,
+            type: 'pin-p',
+            xPercent: removedMarker.xPercent,
+            yPercent: removedMarker.yPercent
+          });
+        }
+      }
+      removeSurveyClueByLinkedMarker(removedMarker.id);
+    }
+    if (surveyorStateHasNoActiveData()) {
+      surveyClueId = 0;
+      surveyorStarted = false;
+    }
+
+    broadcastSurveyorState();
+    return getSurveyorState();
+  });
+  ipcMain.handle('surveyor:start', () => {
+    const hasPlayerMarker = surveyMarkers.some((marker) => marker.type === 'pin-p');
+    const hasTargetMarker = surveyMarkers.some((marker) => marker.type === 'pin-t');
+    if (!hasPlayerMarker || !hasTargetMarker) {
+      return getSurveyorState();
+    }
+
+    surveyorStarted = true;
+    broadcastSurveyorState();
+    return getSurveyorState();
+  });
+  ipcMain.handle('surveyor:reset', () => {
+    resetSurveyorState();
+    broadcastSurveyorState();
+    return getSurveyorState();
   });
 
   ipcMain.handle('chat:get-state', () => getChatState());
@@ -1585,8 +2051,10 @@ app.whenReady().then(async () => {
 
   const toggleShortcut = process.platform === 'darwin' ? 'Command+Shift+L' : 'Control+Shift+L';
   globalShortcut.register(toggleShortcut, () => {
-    if (overlayWindows.size === 0) return;
-    applyOverlayLock(!overlayLocked);
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    if (!focusedWindow) return;
+    if (!getOverlayLikeWindows().includes(focusedWindow)) return;
+    applyOverlayLock(focusedWindow, !isOverlayWindowLocked(focusedWindow));
   });
 
   app.on('activate', function () {

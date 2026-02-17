@@ -16,6 +16,13 @@ export interface FontSettings {
   color: string;
 }
 
+export interface SurveyorGridSettings {
+  thickness: number;
+  color: string;
+  gap: number;
+  columns: number;
+}
+
 export interface StatsEntry {
   skill: string;
   value: number;

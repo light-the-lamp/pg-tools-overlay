@@ -4,6 +4,10 @@
   border-color: rgba(255, 131, 95, 0.95);
 }
 
+.surveyor-shell-secondary {
+  border-color: rgba(87, 188, 255, 0.95);
+}
+
 .surveyor-content {
   position: relative;
   display: flex;
@@ -65,6 +69,28 @@
   cursor: pointer;
 }
 
+.pin-start {
+  width: 100%;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(232, 194, 75, 0.3);
+  color: #f7faff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pin-start:hover {
+  background: rgba(232, 194, 75, 0.65);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.pin-start:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .pin-reset:hover:enabled {
   background: rgba(214, 68, 68, 0.65);
   border-color: rgba(255, 255, 255, 0.7);
@@ -81,6 +107,78 @@
   min-width: 0;
   min-height: 0;
   cursor: crosshair;
+}
+
+.surveyor-canvas-secondary {
+  cursor: default;
+}
+
+.inventory-anchor-grid {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: grid;
+  grid-template-columns: repeat(var(--inventory-grid-columns, 10), 50px);
+  grid-auto-rows: 50px;
+  gap: var(--inventory-grid-gap, 10px);
+  align-items: start;
+}
+
+.inventory-anchor-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+}
+
+.inventory-anchor-square {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  background: transparent;
+  border: var(--inventory-square-border-width, 2px) solid var(--inventory-square-color, #f4da46);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.inventory-anchor-placeholder {
+  width: 50px;
+  height: 50px;
+  visibility: hidden;
+}
+
+.inventory-anchor-number {
+  color: var(--inventory-square-color, #f4da46);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.inventory-anchor-text {
+  max-width: 100px;
+  color: #f4da46;
+  font-size: 10px;
+  line-height: 1.25;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.surveyor-prompt {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid rgba(244, 218, 70, 0.6);
+  border-radius: 7px;
+  background: rgba(20, 22, 28, 0.65);
+  color: #f4da46;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .route-overlay {
@@ -127,4 +225,16 @@
 
 .placed-pin.pin-t {
   background: #47a4ff;
+}
+
+.placed-pin-number {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  font-size: 8px;
+  font-weight: 700;
+  color: #f7fbff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
 }

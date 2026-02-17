@@ -41,6 +41,9 @@ function App(): React.JSX.Element {
   if (window.location.hash === '#surveyor') {
     return <SurveyorView />;
   }
+  if (window.location.hash === '#surveyor-2') {
+    return <SurveyorView variant="secondary" />;
+  }
   if (window.location.hash === '#loot-tracker') {
     return <LootTrackerView />;
   }

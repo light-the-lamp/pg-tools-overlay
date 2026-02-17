@@ -13,6 +13,13 @@ interface FontSettings {
   color: string;
 }
 
+interface SurveyorGridSettings {
+  thickness: number;
+  color: string;
+  gap: number;
+  columns: number;
+}
+
 interface StatsEntry {
   skill: string;
   value: number;
@@ -47,6 +54,32 @@ interface CombatSkillWatcherState {
   selectedSkills: string[];
 }
 
+type SurveyDirectionX = 'east' | 'west';
+type SurveyDirectionY = 'north' | 'south';
+type SurveyMarkerType = 'pin-p' | 'pin-t';
+
+interface SurveyMarker {
+  id: number;
+  type: SurveyMarkerType;
+  xPercent: number;
+  yPercent: number;
+}
+
+interface SurveyClue {
+  id: number;
+  xMeters: number;
+  xDirection: SurveyDirectionX;
+  yMeters: number;
+  yDirection: SurveyDirectionY;
+  linkedTargetMarkerId: number | null;
+}
+
+interface SurveyorState {
+  started: boolean;
+  clues: SurveyClue[];
+  markers: SurveyMarker[];
+}
+
 const api = {
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
   closeWindow: (): Promise<void> => ipcRenderer.invoke('window:close'),
@@ -73,6 +106,9 @@ const api = {
   },
   openSurveyorWindow: (): Promise<void> => {
     return ipcRenderer.invoke('window:open-surveyor');
+  },
+  openSurveyorWindow2: (): Promise<void> => {
+    return ipcRenderer.invoke('window:open-surveyor-2');
   },
   openLootTrackerWindow: (): Promise<void> => {
     return ipcRenderer.invoke('window:open-loot-tracker');
@@ -127,6 +163,31 @@ const api = {
   },
   setCombatSkillWatcherSkills: (skills: string[]): Promise<CombatSkillWatcherState> => {
     return ipcRenderer.invoke('combat-skill-watcher:set-selected-skills', skills);
+  },
+  getSurveyorState: (): Promise<SurveyorState> => {
+    return ipcRenderer.invoke('surveyor:get-state');
+  },
+  getSurveyorGridSettings: (): Promise<SurveyorGridSettings> => {
+    return ipcRenderer.invoke('surveyor:get-grid-settings');
+  },
+  setSurveyorGridSettings: (settings: SurveyorGridSettings): Promise<SurveyorGridSettings> => {
+    return ipcRenderer.invoke('surveyor:set-grid-settings', settings);
+  },
+  addSurveyorMarker: (
+    type: SurveyMarkerType,
+    xPercent: number,
+    yPercent: number
+  ): Promise<SurveyorState> => {
+    return ipcRenderer.invoke('surveyor:add-marker', { type, xPercent, yPercent });
+  },
+  removeSurveyorMarker: (markerId: number): Promise<SurveyorState> => {
+    return ipcRenderer.invoke('surveyor:remove-marker', markerId);
+  },
+  startSurveyor: (): Promise<SurveyorState> => {
+    return ipcRenderer.invoke('surveyor:start');
+  },
+  resetSurveyor: (): Promise<SurveyorState> => {
+    return ipcRenderer.invoke('surveyor:reset');
   },
   onOverlayLockStateChanged: (listener: (locked: boolean) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, locked: boolean): void => listener(locked);
@@ -197,6 +258,24 @@ const api = {
     ipcRenderer.on('combat-skill-watcher:state-changed', handler);
     return (): void => {
       ipcRenderer.removeListener('combat-skill-watcher:state-changed', handler);
+    };
+  },
+  onSurveyorStateChanged: (listener: (state: SurveyorState) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: SurveyorState): void =>
+      listener(state);
+    ipcRenderer.on('surveyor:state-changed', handler);
+    return (): void => {
+      ipcRenderer.removeListener('surveyor:state-changed', handler);
+    };
+  },
+  onSurveyorGridSettingsChanged: (
+    listener: (settings: SurveyorGridSettings) => void
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, settings: SurveyorGridSettings): void =>
+      listener(settings);
+    ipcRenderer.on('surveyor:grid-settings-changed', handler);
+    return (): void => {
+      ipcRenderer.removeListener('surveyor:grid-settings-changed', handler);
     };
   }
 };

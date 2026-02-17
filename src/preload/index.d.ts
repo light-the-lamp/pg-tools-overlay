@@ -18,6 +18,13 @@ interface FontSettings {
   color: string
 }
 
+interface SurveyorGridSettings {
+  thickness: number
+  color: string
+  gap: number
+  columns: number
+}
+
 interface StatsEntry {
   skill: string
   value: number
@@ -52,6 +59,32 @@ interface CombatSkillWatcherState {
   selectedSkills: string[]
 }
 
+type SurveyDirectionX = 'east' | 'west'
+type SurveyDirectionY = 'north' | 'south'
+type SurveyMarkerType = 'pin-p' | 'pin-t'
+
+interface SurveyMarker {
+  id: number
+  type: SurveyMarkerType
+  xPercent: number
+  yPercent: number
+}
+
+interface SurveyClue {
+  id: number
+  xMeters: number
+  xDirection: SurveyDirectionX
+  yMeters: number
+  yDirection: SurveyDirectionY
+  linkedTargetMarkerId: number | null
+}
+
+interface SurveyorState {
+  started: boolean
+  clues: SurveyClue[]
+  markers: SurveyMarker[]
+}
+
 interface OverlayAPI {
   minimizeWindow: () => Promise<void>
   closeWindow: () => Promise<void>
@@ -67,6 +100,7 @@ interface OverlayAPI {
   openSettingsWindow: () => Promise<void>
   openStatsWindow: () => Promise<void>
   openSurveyorWindow: () => Promise<void>
+  openSurveyorWindow2: () => Promise<void>
   openChatWindow: () => Promise<void>
   openCombatSkillWatcherWindow: () => Promise<void>
   toggleMenuWindow: () => Promise<void>
@@ -85,6 +119,17 @@ interface OverlayAPI {
   setLootTrackerObjectiveCount: (itemName: string, count: number) => Promise<LootTrackerState>
   getCombatSkillWatcherState: () => Promise<CombatSkillWatcherState>
   setCombatSkillWatcherSkills: (skills: string[]) => Promise<CombatSkillWatcherState>
+  getSurveyorState: () => Promise<SurveyorState>
+  getSurveyorGridSettings: () => Promise<SurveyorGridSettings>
+  setSurveyorGridSettings: (settings: SurveyorGridSettings) => Promise<SurveyorGridSettings>
+  addSurveyorMarker: (
+    type: SurveyMarkerType,
+    xPercent: number,
+    yPercent: number
+  ) => Promise<SurveyorState>
+  removeSurveyorMarker: (markerId: number) => Promise<SurveyorState>
+  startSurveyor: () => Promise<SurveyorState>
+  resetSurveyor: () => Promise<SurveyorState>
   onOverlayLockStateChanged: (listener: (locked: boolean) => void) => () => void
   onOverlayOpacityChanged: (listener: (opacity: number) => void) => () => void
   onFontSettingsChanged: (listener: (settings: FontSettings) => void) => () => void
@@ -93,6 +138,8 @@ interface OverlayAPI {
   onChatNotificationStateChanged: (listener: (state: ChatNotificationState) => void) => () => void
   onLootTrackerStateChanged: (listener: (state: LootTrackerState) => void) => () => void
   onCombatSkillWatcherStateChanged: (listener: (state: CombatSkillWatcherState) => void) => () => void
+  onSurveyorStateChanged: (listener: (state: SurveyorState) => void) => () => void
+  onSurveyorGridSettingsChanged: (listener: (settings: SurveyorGridSettings) => void) => () => void
 }
 
 declare global {
