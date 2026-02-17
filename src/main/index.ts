@@ -28,6 +28,7 @@ interface SurveyorGridSettings {
   color: string;
   gap: number;
   columns: number;
+  size: number;
 }
 
 interface AppSettings {
@@ -113,7 +114,8 @@ let surveyorGridSettings: SurveyorGridSettings = {
   thickness: 2,
   color: '#f4da46',
   gap: 10,
-  columns: 10
+  columns: 10,
+  size: 50
 };
 let settingsPath = '';
 let settingsWriteInFlight: Promise<void> | null = null;
@@ -308,6 +310,7 @@ function sanitizeSurveyorGridSettings(settings: unknown): SurveyorGridSettings {
   const thicknessValue = Math.floor(Number(source.thickness));
   const gapValue = Math.floor(Number(source.gap));
   const columnsValue = Math.floor(Number(source.columns));
+  const sizeValue = Math.floor(Number(source.size));
 
   return {
     thickness: Number.isFinite(thicknessValue)
@@ -317,7 +320,8 @@ function sanitizeSurveyorGridSettings(settings: unknown): SurveyorGridSettings {
     gap: Number.isFinite(gapValue) ? Math.max(0, Math.min(24, gapValue)) : surveyorGridSettings.gap,
     columns: Number.isFinite(columnsValue)
       ? Math.max(1, Math.min(20, columnsValue))
-      : surveyorGridSettings.columns
+      : surveyorGridSettings.columns,
+    size: Number.isFinite(sizeValue) ? Math.max(20, Math.min(120, sizeValue)) : surveyorGridSettings.size
   };
 }
 

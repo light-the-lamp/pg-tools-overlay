@@ -23,6 +23,7 @@ interface SurveyorGridSettings {
   color: string
   gap: number
   columns: number
+  size: number
 }
 
 interface StatsEntry {

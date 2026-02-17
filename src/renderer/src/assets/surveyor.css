@@ -118,8 +118,8 @@
   top: 8px;
   left: 8px;
   display: grid;
-  grid-template-columns: repeat(var(--inventory-grid-columns, 10), 50px);
-  grid-auto-rows: 50px;
+  grid-template-columns: repeat(var(--inventory-grid-columns, 10), var(--inventory-square-size, 50px));
+  grid-auto-rows: var(--inventory-square-size, 50px);
   gap: var(--inventory-grid-gap, 10px);
   align-items: start;
 }
@@ -135,8 +135,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 50px;
-  height: 50px;
+  width: var(--inventory-square-size, 50px);
+  height: var(--inventory-square-size, 50px);
   background: transparent;
   border: var(--inventory-square-border-width, 2px) solid var(--inventory-square-color, #f4da46);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
@@ -144,8 +144,8 @@
 }
 
 .inventory-anchor-placeholder {
-  width: 50px;
-  height: 50px;
+  width: var(--inventory-square-size, 50px);
+  height: var(--inventory-square-size, 50px);
   visibility: hidden;
 }
 

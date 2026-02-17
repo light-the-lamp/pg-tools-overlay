@@ -8,7 +8,8 @@ export default function SettingsView(): React.JSX.Element {
     thickness: 2,
     color: '#f4da46',
     gap: 10,
-    columns: 10
+    columns: 10,
+    size: 50
   });
   const [, setChatNotificationState] = useState<ChatNotificationState>({
     keywords: [],
@@ -109,6 +110,13 @@ export default function SettingsView(): React.JSX.Element {
   const onSurveyorColumnsChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const columns = Number(event.target.value);
     const nextSettings = { ...surveyorGridSettings, columns };
+    setSurveyorGridSettings(nextSettings);
+    void window.api.setSurveyorGridSettings(nextSettings);
+  };
+
+  const onSurveyorSizeChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const size = Number(event.target.value);
+    const nextSettings = { ...surveyorGridSettings, size };
     setSurveyorGridSettings(nextSettings);
     void window.api.setSurveyorGridSettings(nextSettings);
   };
@@ -223,6 +231,18 @@ export default function SettingsView(): React.JSX.Element {
           onChange={onSurveyorColumnsChange}
           type="range"
           value={surveyorGridSettings.columns}
+        />
+        <label className="slider-label" htmlFor="surveyor-grid-size-slider">
+          Surveyor Square Size: {surveyorGridSettings.size}px
+        </label>
+        <input
+          className="opacity-slider"
+          id="surveyor-grid-size-slider"
+          max="120"
+          min="20"
+          onChange={onSurveyorSizeChange}
+          type="range"
+          value={surveyorGridSettings.size}
         />
       </div>
     </main>

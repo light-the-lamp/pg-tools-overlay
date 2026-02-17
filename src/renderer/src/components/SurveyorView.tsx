@@ -46,7 +46,8 @@ export default function SurveyorView({
     thickness: 2,
     color: '#f4da46',
     gap: 10,
-    columns: 10
+    columns: 10,
+    size: 50
   });
 
   const startResize = useCallback((direction: ResizeDirection, startEvent: React.MouseEvent) => {
@@ -107,9 +108,10 @@ export default function SurveyorView({
         '--inventory-grid-columns': String(gridSettings.columns),
         '--inventory-grid-gap': `${gridSettings.gap}px`,
         '--inventory-square-border-width': `${gridSettings.thickness}px`,
-        '--inventory-square-color': gridSettings.color
+        '--inventory-square-color': gridSettings.color,
+        '--inventory-square-size': `${gridSettings.size}px`
       }) as React.CSSProperties,
-    [gridSettings.columns, gridSettings.color, gridSettings.gap, gridSettings.thickness]
+    [gridSettings.columns, gridSettings.color, gridSettings.gap, gridSettings.size, gridSettings.thickness]
   );
 
   const playerPin = useMemo(
