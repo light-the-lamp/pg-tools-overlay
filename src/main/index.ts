@@ -39,6 +39,7 @@ interface AppSettings {
   lootTrackerObjectives: LootObjectiveConfig[];
   lootTrackerCounts: Record<string, number>;
   combatSkillWatcherSkills: string[];
+  appReleaseCheck: AppReleaseCheckCache | null;
 }
 
 interface ChatNotificationState {
@@ -63,6 +64,21 @@ interface LootTrackerState {
 
 interface CombatSkillWatcherState {
   selectedSkills: string[];
+}
+
+interface AppReleaseCheckState {
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseUrl: string | null;
+  updateAvailable: boolean;
+  error: string | null;
+}
+
+interface AppReleaseCheckCache {
+  checkedOn: string;
+  latestVersion: string | null;
+  releaseUrl: string | null;
+  error: string | null;
 }
 
 interface StatsEntry {
@@ -123,7 +139,7 @@ const xpBySkill = new Map<string, number>();
 const levelUpsBySkill = new Map<string, number>();
 const topBarInteractiveByWindow = new WeakMap<BrowserWindow, boolean>();
 const overlayMinSize = { width: 100, height: 100 };
-const menuWindowSize = { width: 240, height: 320 };
+const menuWindowSize = { width: 240, height: 400 };
 const menuWindowGap = 8;
 const overlayTopBarHeight = 52;
 const overlayResizeEdge = 14;
@@ -131,6 +147,9 @@ const mouseTrackingIntervalMs = 80;
 let mouseTrackingInterval: NodeJS.Timeout | null = null;
 const ignoreMouseByWindow = new WeakMap<BrowserWindow, boolean>();
 const overlayLockedByWindow = new WeakMap<BrowserWindow, boolean>();
+const allowManualMinimizeByWindow = new WeakMap<BrowserWindow, boolean>();
+const githubOwner = 'light-the-lamp';
+const githubRepo = 'pg-tools-overlay';
 
 const chatLines: ChatLine[] = [];
 const chatChannels = new Set<string>();
@@ -153,12 +172,21 @@ let surveyMarkerId = 0;
 let surveyClueId = 0;
 const surveyMarkers: SurveyMarker[] = [];
 const surveyClues: SurveyClue[] = [];
+let appReleaseCheckCache: AppReleaseCheckCache | null = null;
+let releaseCheckInFlight: Promise<AppReleaseCheckState> | null = null;
 
 function getDateKey(date: Date): string {
   const yy = String(date.getFullYear()).slice(-2);
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const dd = String(date.getDate()).padStart(2, '0');
   return `${yy}-${mm}-${dd}`;
+}
+
+function getDayKey(date: Date): string {
+  const yyyy = String(date.getFullYear());
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function getTodayLogCandidates(): string[] {
@@ -321,7 +349,9 @@ function sanitizeSurveyorGridSettings(settings: unknown): SurveyorGridSettings {
     columns: Number.isFinite(columnsValue)
       ? Math.max(1, Math.min(20, columnsValue))
       : surveyorGridSettings.columns,
-    size: Number.isFinite(sizeValue) ? Math.max(20, Math.min(120, sizeValue)) : surveyorGridSettings.size
+    size: Number.isFinite(sizeValue)
+      ? Math.max(20, Math.min(120, sizeValue))
+      : surveyorGridSettings.size
   };
 }
 
@@ -507,7 +537,9 @@ function getSurveyorState(): SurveyorState {
   };
 }
 
-function parseSurveyClueFromLine(text: string): Omit<SurveyClue, 'id' | 'linkedTargetMarkerId'> | null {
+function parseSurveyClueFromLine(
+  text: string
+): Omit<SurveyClue, 'id' | 'linkedTargetMarkerId'> | null {
   const message = getMatchableChatText(text);
   const match = message.match(
     /is\s+(\d+(?:\.\d+)?)\s*m\s*(east|west)\s+and\s+(\d+(?:\.\d+)?)\s*m\s*(north|south)/i
@@ -635,6 +667,209 @@ function getCombatSkillWatcherState(): CombatSkillWatcherState {
   };
 }
 
+function splitComparableVersion(version: string): { core: number[]; preRelease: string[] } | null {
+  const cleaned = version.trim().replace(/^v/i, '').split('+')[0];
+  if (!cleaned) {
+    return null;
+  }
+
+  const [coreRaw, preReleaseRaw = ''] = cleaned.split('-', 2);
+  if (!coreRaw) {
+    return null;
+  }
+
+  const core = coreRaw.split('.').map((value) => Number.parseInt(value, 10));
+  if (core.length === 0 || core.some((value) => !Number.isFinite(value) || value < 0)) {
+    return null;
+  }
+
+  const preRelease = preReleaseRaw ? preReleaseRaw.split('.') : [];
+  return { core, preRelease };
+}
+
+function comparePreReleasePart(left: string, right: string): number {
+  const leftNumeric = /^\d+$/.test(left);
+  const rightNumeric = /^\d+$/.test(right);
+  if (leftNumeric && rightNumeric) {
+    return Number.parseInt(left, 10) - Number.parseInt(right, 10);
+  }
+
+  if (leftNumeric) {
+    return -1;
+  }
+  if (rightNumeric) {
+    return 1;
+  }
+
+  return left.localeCompare(right);
+}
+
+function compareVersions(left: string, right: string): number | null {
+  const leftVersion = splitComparableVersion(left);
+  const rightVersion = splitComparableVersion(right);
+  if (!leftVersion || !rightVersion) {
+    return null;
+  }
+
+  const coreLength = Math.max(leftVersion.core.length, rightVersion.core.length);
+  for (let index = 0; index < coreLength; index += 1) {
+    const delta = (leftVersion.core[index] ?? 0) - (rightVersion.core[index] ?? 0);
+    if (delta !== 0) {
+      return delta;
+    }
+  }
+
+  if (leftVersion.preRelease.length === 0 && rightVersion.preRelease.length === 0) {
+    return 0;
+  }
+  if (leftVersion.preRelease.length === 0) {
+    return 1;
+  }
+  if (rightVersion.preRelease.length === 0) {
+    return -1;
+  }
+
+  const preLength = Math.max(leftVersion.preRelease.length, rightVersion.preRelease.length);
+  for (let index = 0; index < preLength; index += 1) {
+    const leftPart = leftVersion.preRelease[index];
+    const rightPart = rightVersion.preRelease[index];
+    if (leftPart == null) {
+      return -1;
+    }
+    if (rightPart == null) {
+      return 1;
+    }
+    const delta = comparePreReleasePart(leftPart, rightPart);
+    if (delta !== 0) {
+      return delta;
+    }
+  }
+
+  return 0;
+}
+
+function extractVersionTag(tag: unknown): string | null {
+  if (typeof tag !== 'string') {
+    return null;
+  }
+
+  const trimmed = tag.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const match = trimmed.match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/);
+  return match ? match[0] : trimmed.replace(/^v/i, '');
+}
+
+function buildReleaseStateFromCache(
+  currentVersion: string,
+  cache: AppReleaseCheckCache | null
+): AppReleaseCheckState | null {
+  if (!cache) {
+    return null;
+  }
+
+  let updateAvailable = false;
+  if (cache.latestVersion) {
+    const comparison = compareVersions(cache.latestVersion, currentVersion);
+    updateAvailable = comparison != null && comparison > 0;
+  }
+
+  return {
+    currentVersion,
+    latestVersion: cache.latestVersion,
+    releaseUrl: cache.releaseUrl,
+    updateAvailable,
+    error: cache.error
+  };
+}
+
+async function checkGithubRelease(): Promise<AppReleaseCheckState> {
+  const currentVersion = app.getVersion();
+  const today = getDayKey(new Date());
+  if (appReleaseCheckCache?.checkedOn === today) {
+    return (
+      buildReleaseStateFromCache(currentVersion, appReleaseCheckCache) ?? {
+        currentVersion,
+        latestVersion: null,
+        releaseUrl: null,
+        updateAvailable: false,
+        error: 'No cached release-check state available'
+      }
+    );
+  }
+
+  if (releaseCheckInFlight) {
+    return releaseCheckInFlight;
+  }
+
+  const releaseApiUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/releases/latest`;
+  const fallback: AppReleaseCheckState = {
+    currentVersion,
+    latestVersion: null,
+    releaseUrl: null,
+    updateAvailable: false,
+    error: null
+  };
+
+  releaseCheckInFlight = (async () => {
+    try {
+      const response = await fetch(releaseApiUrl, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': `pg-tools/${currentVersion}`
+        },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!response.ok) {
+        throw new Error(`GitHub API request failed (${response.status})`);
+      }
+
+      const payload = (await response.json()) as {
+        tag_name?: unknown;
+        html_url?: unknown;
+      };
+      const latestVersion = extractVersionTag(payload.tag_name);
+      if (!latestVersion) {
+        throw new Error('Latest release tag does not contain a version');
+      }
+
+      const comparison = compareVersions(latestVersion, currentVersion);
+      if (comparison == null) {
+        throw new Error('Unable to compare versions');
+      }
+
+      return {
+        currentVersion,
+        latestVersion,
+        releaseUrl: typeof payload.html_url === 'string' ? payload.html_url : null,
+        updateAvailable: comparison > 0,
+        error: null
+      };
+    } catch (error) {
+      return {
+        ...fallback,
+        error: error instanceof Error ? error.message : 'Failed to check for updates'
+      };
+    }
+  })();
+
+  try {
+    const result = await releaseCheckInFlight;
+    appReleaseCheckCache = {
+      checkedOn: today,
+      latestVersion: result.latestVersion,
+      releaseUrl: result.releaseUrl,
+      error: result.error
+    };
+    void persistAppSettings();
+    return result;
+  } finally {
+    releaseCheckInFlight = null;
+  }
+}
+
 function broadcastChatState(): void {
   const state = getChatState();
   for (const window of overlayWindows) {
@@ -739,7 +974,8 @@ function getSettingsPayload(): AppSettings {
     chatNotificationKeywords,
     lootTrackerObjectives,
     lootTrackerCounts: getPersistableLootTrackerCounts(),
-    combatSkillWatcherSkills
+    combatSkillWatcherSkills,
+    appReleaseCheck: appReleaseCheckCache
   };
 }
 
@@ -766,6 +1002,27 @@ async function loadAppSettings(): Promise<void> {
     const nextLootObjectives = sanitizeLootTrackerObjectives(parsed.lootTrackerObjectives);
     const nextLootCounts = sanitizeLootTrackerCounts(parsed.lootTrackerCounts, nextLootObjectives);
     const nextCombatSkills = sanitizeCombatSkillWatcherSkills(parsed.combatSkillWatcherSkills);
+    const nextReleaseCheck =
+      parsed.appReleaseCheck &&
+      typeof parsed.appReleaseCheck === 'object' &&
+      typeof (parsed.appReleaseCheck as { checkedOn?: unknown }).checkedOn === 'string'
+        ? {
+            checkedOn: (parsed.appReleaseCheck as { checkedOn: string }).checkedOn,
+            latestVersion:
+              typeof (parsed.appReleaseCheck as { latestVersion?: unknown }).latestVersion ===
+              'string'
+                ? (parsed.appReleaseCheck as { latestVersion: string }).latestVersion
+                : null,
+            releaseUrl:
+              typeof (parsed.appReleaseCheck as { releaseUrl?: unknown }).releaseUrl === 'string'
+                ? (parsed.appReleaseCheck as { releaseUrl: string }).releaseUrl
+                : null,
+            error:
+              typeof (parsed.appReleaseCheck as { error?: unknown }).error === 'string'
+                ? (parsed.appReleaseCheck as { error: string }).error
+                : null
+          }
+        : null;
 
     overlayOpacity = nextOpacity;
     overlayFontSettings = { size: nextFontSize, color: nextFontColor };
@@ -773,6 +1030,7 @@ async function loadAppSettings(): Promise<void> {
     chatNotificationKeywords = nextNotificationKeywords;
     lootTrackerObjectives = nextLootObjectives;
     combatSkillWatcherSkills = nextCombatSkills;
+    appReleaseCheckCache = nextReleaseCheck;
     lootCountsByItem.clear();
     for (const [itemName, count] of nextLootCounts) {
       lootCountsByItem.set(itemName, count);
@@ -1287,6 +1545,13 @@ function createOverlayWindow(): BrowserWindow {
     applyOverlayTraits(mainWindow);
   });
   mainWindow.on('minimize', () => {
+    const allowManualMinimize = allowManualMinimizeByWindow.get(mainWindow) ?? false;
+    if (!allowManualMinimize) {
+      mainWindow.restore();
+      applyOverlayTraits(mainWindow);
+      return;
+    }
+    allowManualMinimizeByWindow.set(mainWindow, false);
     const menuWindow = menuWindows.get(mainWindow);
     if (menuWindow) {
       menuWindow.hide();
@@ -1329,13 +1594,17 @@ function createSettingsWindow(): BrowserWindow {
 
   const window = new BrowserWindow({
     width: 420,
-    height: 320,
+    height: 500,
     minWidth: 380,
     minHeight: 260,
     resizable: true,
     show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: true,
     autoHideMenuBar: true,
     alwaysOnTop: true,
+    titleBarStyle: 'hidden',
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -1344,11 +1613,22 @@ function createSettingsWindow(): BrowserWindow {
   });
 
   window.setTitle('Settings - pg-tools');
+  applyOverlayTraits(window);
+  window.setOpacity(overlayOpacity);
 
   window.on('ready-to-show', () => {
+    applyOverlayTraits(window);
     window.show();
   });
+  window.on('focus', () => {
+    applyOverlayTraits(window);
+  });
+  window.on('restore', () => {
+    applyOverlayTraits(window);
+  });
   window.webContents.on('did-finish-load', () => {
+    window.webContents.send('overlay:opacity-changed', overlayOpacity);
+    window.webContents.send('overlay:font-settings-changed', overlayFontSettings);
     window.webContents.send('chat:notification-state-changed', getChatNotificationState());
   });
   window.on('closed', () => {
@@ -1715,9 +1995,14 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window);
   });
 
+  ipcMain.handle('app:get-version', () => app.getVersion());
+  ipcMain.handle('app:check-release', () => checkGithubRelease());
+
   ipcMain.handle('window:minimize', (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
-    window?.minimize();
+    if (!window) return;
+    allowManualMinimizeByWindow.set(window, true);
+    window.minimize();
   });
 
   ipcMain.handle('window:close', (event) => {
@@ -1835,7 +2120,10 @@ app.whenReady().then(async () => {
       combatSkillWatcherWindow.setOpacity(nextOpacity);
       combatSkillWatcherWindow.webContents.send('overlay:opacity-changed', nextOpacity);
     }
-    settingsWindow?.webContents.send('overlay:opacity-changed', nextOpacity);
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.setOpacity(nextOpacity);
+      settingsWindow.webContents.send('overlay:opacity-changed', nextOpacity);
+    }
     void persistAppSettings();
     return overlayOpacity;
   });

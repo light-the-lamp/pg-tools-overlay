@@ -60,6 +60,14 @@ interface CombatSkillWatcherState {
   selectedSkills: string[]
 }
 
+interface AppReleaseCheckState {
+  currentVersion: string
+  latestVersion: string | null
+  releaseUrl: string | null
+  updateAvailable: boolean
+  error: string | null
+}
+
 type SurveyDirectionX = 'east' | 'west'
 type SurveyDirectionY = 'north' | 'south'
 type SurveyMarkerType = 'pin-p' | 'pin-t'
@@ -102,6 +110,8 @@ interface OverlayAPI {
   openStatsWindow: () => Promise<void>
   openSurveyorWindow: () => Promise<void>
   openSurveyorWindow2: () => Promise<void>
+  getAppVersion: () => Promise<string>
+  checkAppRelease: () => Promise<AppReleaseCheckState>
   openChatWindow: () => Promise<void>
   openCombatSkillWatcherWindow: () => Promise<void>
   toggleMenuWindow: () => Promise<void>

@@ -3,17 +3,49 @@ import { PiTreasureChest } from 'react-icons/pi';
 import { IoStatsChart } from 'react-icons/io5';
 import { HiOutlineChatAlt2 } from 'react-icons/hi';
 import { MdOutlineChecklist } from 'react-icons/md';
-import { LuSwords } from 'react-icons/lu';
+import { LuExternalLink, LuSwords } from 'react-icons/lu';
 import type { ChatNotificationState } from './types';
+
+interface AppReleaseCheckState {
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseUrl: string | null;
+  updateAvailable: boolean;
+  error: string | null;
+}
 
 export default function MenuView(): React.JSX.Element {
   const [chatNotificationState, setChatNotificationState] = useState<ChatNotificationState>({
     keywords: [],
     matchCount: 0
   });
+  const [appVersion, setAppVersion] = useState('');
+  const [releaseCheck, setReleaseCheck] = useState<AppReleaseCheckState | null>(null);
+  const [isCheckingRelease, setIsCheckingRelease] = useState(true);
+
+  const runReleaseCheck = (): void => {
+    setIsCheckingRelease(true);
+    void window.api
+      .checkAppRelease()
+      .then((result) => {
+        setReleaseCheck(result);
+      })
+      .finally(() => {
+        setIsCheckingRelease(false);
+      });
+  };
 
   useEffect(() => {
     void window.api.getChatNotificationState().then(setChatNotificationState);
+    void window.api.getAppVersion().then(setAppVersion);
+    void window.api
+      .checkAppRelease()
+      .then((result) => {
+        setReleaseCheck(result);
+      })
+      .finally(() => {
+        setIsCheckingRelease(false);
+      });
     const unsubscribe = window.api.onChatNotificationStateChanged((state) => {
       setChatNotificationState(state);
     });
@@ -41,6 +73,10 @@ export default function MenuView(): React.JSX.Element {
 
   const openCombatSkillWatcherWindow = (): void => {
     void window.api.openCombatSkillWatcherWindow();
+  };
+
+  const openSunValePuzzle = (): void => {
+    window.open('https://sun-vale-puzzle.netlify.app/', '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -82,8 +118,43 @@ export default function MenuView(): React.JSX.Element {
             <LuSwords className="menu-btn-icon" />
           </span>
         </button>
+        <button className="menu-btn secondary" onClick={openSunValePuzzle} type="button">
+          <span className="menu-btn-content">
+            <span>Sun Vale Puzzle</span>
+            <LuExternalLink className="menu-btn-icon" />
+          </span>
+        </button>
       </div>
-      <p className="menu-footer">More tools coming soon. (maybe)</p>
+      <p className="menu-footer">
+        More tools coming soon. (maybe)
+        {appVersion ? ` v${appVersion}` : ''}
+      </p>
+      <div className="menu-update-status">
+        {isCheckingRelease ? <span>Checking for updates...</span> : null}
+        {!isCheckingRelease && releaseCheck?.error ? (
+          <span className="menu-update-error">Update check failed: {releaseCheck.error}</span>
+        ) : null}
+        {!isCheckingRelease && !releaseCheck?.error && releaseCheck?.updateAvailable ? (
+          <span>
+            Update available: v{releaseCheck.latestVersion}{' '}
+            {releaseCheck.releaseUrl ? (
+              <a href={releaseCheck.releaseUrl} rel="noreferrer" target="_blank">
+                open release
+              </a>
+            ) : null}
+          </span>
+        ) : null}
+        {!isCheckingRelease &&
+        !releaseCheck?.error &&
+        releaseCheck &&
+        !releaseCheck.updateAvailable &&
+        releaseCheck.latestVersion ? (
+          <span>Up to date (latest: v{releaseCheck.latestVersion})</span>
+        ) : null}
+        <button className="menu-update-check-btn" onClick={runReleaseCheck} type="button">
+          Check updates
+        </button>
+      </div>
     </main>
   );
 }

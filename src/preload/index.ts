@@ -55,6 +55,14 @@ interface CombatSkillWatcherState {
   selectedSkills: string[];
 }
 
+interface AppReleaseCheckState {
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseUrl: string | null;
+  updateAvailable: boolean;
+  error: string | null;
+}
+
 type SurveyDirectionX = 'east' | 'west';
 type SurveyDirectionY = 'north' | 'south';
 type SurveyMarkerType = 'pin-p' | 'pin-t';
@@ -116,6 +124,12 @@ const api = {
   },
   openCombatSkillWatcherWindow: (): Promise<void> => {
     return ipcRenderer.invoke('window:open-combat-skill-watcher');
+  },
+  getAppVersion: (): Promise<string> => {
+    return ipcRenderer.invoke('app:get-version');
+  },
+  checkAppRelease: (): Promise<AppReleaseCheckState> => {
+    return ipcRenderer.invoke('app:check-release');
   },
   openChatWindow: (): Promise<void> => {
     return ipcRenderer.invoke('window:open-chat');

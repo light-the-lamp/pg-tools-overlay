@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ChatNotificationState, FontSettings, SurveyorGridSettings } from './types';
+
+type ResizeDirection = 'right' | 'bottom' | 'corner';
 
 export default function SettingsView(): React.JSX.Element {
   const [opacity, setOpacity] = useState(100);
@@ -132,119 +134,182 @@ export default function SettingsView(): React.JSX.Element {
     });
   };
 
+  const closeWindow = (): void => {
+    void window.api.closeWindow();
+  };
+
+  const startResize = useCallback((direction: ResizeDirection, startEvent: React.MouseEvent) => {
+    startEvent.preventDefault();
+    const startX = startEvent.screenX;
+    const startY = startEvent.screenY;
+    const startWidth = window.outerWidth;
+    const startHeight = window.outerHeight;
+
+    const onMouseMove = (event: MouseEvent): void => {
+      const dx = event.screenX - startX;
+      const dy = event.screenY - startY;
+      const nextBounds: { width?: number; height?: number } = {};
+
+      if (direction === 'right' || direction === 'corner') {
+        nextBounds.width = startWidth + dx;
+      }
+      if (direction === 'bottom' || direction === 'corner') {
+        nextBounds.height = startHeight + dy;
+      }
+
+      void window.api.resizeWindow(nextBounds);
+    };
+
+    const stopResize = (): void => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', stopResize);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', stopResize);
+  }, []);
+
   return (
     <main className="overlay-shell">
-      <div className="settings-shell">
-        <h1 className="settings-title">Application settings</h1>
-        <label className="slider-label" htmlFor="opacity-slider">
-          Overlay Opacity: {opacity}%
-        </label>
-        <input
-          className="opacity-slider"
-          id="opacity-slider"
-          max="100"
-          min="20"
-          onChange={onOpacityChange}
-          type="range"
-          value={opacity}
-        />
-        <label className="slider-label" htmlFor="font-size-slider">
-          Chat Font Size: {fontSettings.size}px
-        </label>
-        <input
-          className="opacity-slider"
-          id="font-size-slider"
-          max="22"
-          min="10"
-          onChange={onFontSizeChange}
-          type="range"
-          value={fontSettings.size}
-        />
-        <label className="slider-label" htmlFor="font-color-picker">
-          Chat Font Color
-        </label>
-        <input
-          className="color-picker"
-          id="font-color-picker"
-          onChange={onFontColorChange}
-          type="color"
-          value={fontSettings.color}
-        />
-        <h1 className="settings-title settings-section">Notification</h1>
-        <label className="slider-label" htmlFor="chat-keywords">
-          Chat Alert Keywords (one per line)
-        </label>
-        <textarea
-          className="keywords-input"
-          id="chat-keywords"
-          onChange={(event) => setKeywordsInput(event.target.value)}
-          placeholder="boss&#10;myname&#10;help"
-          rows={6}
-          value={keywordsInput}
-        />
-        <button className="save-keywords-btn" onClick={saveNotificationKeywords} type="button">
-          Save Alert Keywords
-        </button>
-        <h1 className="settings-title settings-section">Surveyor</h1>
-        <label className="slider-label" htmlFor="surveyor-grid-thickness-slider">
-          Surveyor Square Thickness: {surveyorGridSettings.thickness}px
-        </label>
-        <input
-          className="opacity-slider"
-          id="surveyor-grid-thickness-slider"
-          max="8"
-          min="1"
-          onChange={onSurveyorThicknessChange}
-          type="range"
-          value={surveyorGridSettings.thickness}
-        />
-        <label className="slider-label" htmlFor="surveyor-grid-color-picker">
-          Surveyor Square Color
-        </label>
-        <input
-          className="color-picker"
-          id="surveyor-grid-color-picker"
-          onChange={onSurveyorColorChange}
-          type="color"
-          value={surveyorGridSettings.color}
-        />
-        <label className="slider-label" htmlFor="surveyor-grid-gap-slider">
-          Surveyor Square Gap: {surveyorGridSettings.gap}px
-        </label>
-        <input
-          className="opacity-slider"
-          id="surveyor-grid-gap-slider"
-          max="24"
-          min="0"
-          onChange={onSurveyorGapChange}
-          type="range"
-          value={surveyorGridSettings.gap}
-        />
-        <label className="slider-label" htmlFor="surveyor-grid-columns-slider">
-          Surveyor Grid Columns: {surveyorGridSettings.columns}
-        </label>
-        <input
-          className="opacity-slider"
-          id="surveyor-grid-columns-slider"
-          max="20"
-          min="1"
-          onChange={onSurveyorColumnsChange}
-          type="range"
-          value={surveyorGridSettings.columns}
-        />
-        <label className="slider-label" htmlFor="surveyor-grid-size-slider">
-          Surveyor Square Size: {surveyorGridSettings.size}px
-        </label>
-        <input
-          className="opacity-slider"
-          id="surveyor-grid-size-slider"
-          max="120"
-          min="20"
-          onChange={onSurveyorSizeChange}
-          type="range"
-          value={surveyorGridSettings.size}
-        />
+      <header className="drag-bar">
+        <p className="title">Settings</p>
+        <div className="window-actions no-drag">
+          <button
+            aria-label="Close"
+            className="window-btn close"
+            onClick={closeWindow}
+            title="Close"
+            type="button"
+          >
+            x
+          </button>
+        </div>
+      </header>
+      <div className="settings-shell no-drag">
+        <div className="settings-list">
+          <h1 className="settings-title">Application settings</h1>
+          <label className="slider-label" htmlFor="opacity-slider">
+            Overlay Opacity: {opacity}%
+          </label>
+          <input
+            className="opacity-slider"
+            id="opacity-slider"
+            max="100"
+            min="20"
+            onChange={onOpacityChange}
+            type="range"
+            value={opacity}
+          />
+          <label className="slider-label" htmlFor="font-size-slider">
+            Chat Font Size: {fontSettings.size}px
+          </label>
+          <input
+            className="opacity-slider"
+            id="font-size-slider"
+            max="22"
+            min="10"
+            onChange={onFontSizeChange}
+            type="range"
+            value={fontSettings.size}
+          />
+          <label className="slider-label" htmlFor="font-color-picker">
+            Chat Font Color
+          </label>
+          <input
+            className="color-picker"
+            id="font-color-picker"
+            onChange={onFontColorChange}
+            type="color"
+            value={fontSettings.color}
+          />
+          <h1 className="settings-title settings-section">Notification</h1>
+          <label className="slider-label" htmlFor="chat-keywords">
+            Chat Alert Keywords (one per line)
+          </label>
+          <textarea
+            className="keywords-input"
+            id="chat-keywords"
+            onChange={(event) => setKeywordsInput(event.target.value)}
+            placeholder="boss&#10;myname&#10;help"
+            rows={6}
+            value={keywordsInput}
+          />
+          <button className="save-keywords-btn" onClick={saveNotificationKeywords} type="button">
+            Save Alert Keywords
+          </button>
+          <h1 className="settings-title settings-section">Surveyor</h1>
+          <label className="slider-label" htmlFor="surveyor-grid-thickness-slider">
+            Surveyor Square Thickness: {surveyorGridSettings.thickness}px
+          </label>
+          <input
+            className="opacity-slider"
+            id="surveyor-grid-thickness-slider"
+            max="8"
+            min="1"
+            onChange={onSurveyorThicknessChange}
+            type="range"
+            value={surveyorGridSettings.thickness}
+          />
+          <label className="slider-label" htmlFor="surveyor-grid-color-picker">
+            Surveyor Square Color
+          </label>
+          <input
+            className="color-picker"
+            id="surveyor-grid-color-picker"
+            onChange={onSurveyorColorChange}
+            type="color"
+            value={surveyorGridSettings.color}
+          />
+          <label className="slider-label" htmlFor="surveyor-grid-gap-slider">
+            Surveyor Square Gap: {surveyorGridSettings.gap}px
+          </label>
+          <input
+            className="opacity-slider"
+            id="surveyor-grid-gap-slider"
+            max="24"
+            min="0"
+            onChange={onSurveyorGapChange}
+            type="range"
+            value={surveyorGridSettings.gap}
+          />
+          <label className="slider-label" htmlFor="surveyor-grid-columns-slider">
+            Surveyor Grid Columns: {surveyorGridSettings.columns}
+          </label>
+          <input
+            className="opacity-slider"
+            id="surveyor-grid-columns-slider"
+            max="20"
+            min="1"
+            onChange={onSurveyorColumnsChange}
+            type="range"
+            value={surveyorGridSettings.columns}
+          />
+          <label className="slider-label" htmlFor="surveyor-grid-size-slider">
+            Surveyor Square Size: {surveyorGridSettings.size}px
+          </label>
+          <input
+            className="opacity-slider"
+            id="surveyor-grid-size-slider"
+            max="120"
+            min="20"
+            onChange={onSurveyorSizeChange}
+            type="range"
+            value={surveyorGridSettings.size}
+          />
+        </div>
       </div>
+      <div
+        className="resize-handle resize-right no-drag"
+        onMouseDown={(event) => startResize('right', event)}
+      />
+      <div
+        className="resize-handle resize-bottom no-drag"
+        onMouseDown={(event) => startResize('bottom', event)}
+      />
+      <div
+        className="resize-handle resize-corner no-drag"
+        onMouseDown={(event) => startResize('corner', event)}
+      />
     </main>
   );
 }
