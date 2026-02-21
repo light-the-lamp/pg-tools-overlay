@@ -17,7 +17,7 @@ Now lets add all of the target (T) pins. Use a survey map, place the pin where i
 
 ![Placing target pin](images/placeTargetPin.png)
 
-(If the yellow box is not correctly aligned to the survey map, just reposition the window.)
+(If the yellow box is not correctly aligned to the survey map, just reposition the window. The size, color, gap and border thickness can be changed in settings)
 
 Keep doing it until all desired targets are marked on the map window:
 
